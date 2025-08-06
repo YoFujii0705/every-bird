@@ -1,0 +1,103 @@
+{
+  "bot": {
+    "name": "Habit & Diary Bot",
+    "description": "習慣管理と日記機能を提供するBot"
+  },
+  "notifications": {
+    "diary_reminder": {
+      "time": "21:00",
+      "message": "📝 今日の日記を書く時間です！\n`/diary write` で今日の出来事を記録しましょう。"
+    },
+    "weight_reminder": {
+      "time": "07:30",
+      "message": "⚖️ 朝の体重測定の時間です！\n`/weight record` で今日の体重を記録しましょう。"
+    },
+    "habit_reminders": [
+      {
+        "name": "朝の運動",
+        "time": "07:00",
+        "frequency": "daily",
+        "message": "🏃‍♂️ 朝の運動の時間です！"
+      },
+      {
+        "name": "読書",
+        "time": "19:00",
+        "frequency": "daily", 
+        "message": "📚 読書の時間です！"
+      }
+    ]
+  },
+  "mood_emojis": {
+    "😊": "最高",
+    "🙂": "良い",
+    "😐": "普通",
+    "😔": "悪い", 
+    "😞": "最悪"
+  },
+  "commands": {
+    "diary": {
+      "description": "日記機能",
+      "subcommands": {
+        "write": "日記を書く",
+        "view": "過去の日記を見る",
+        "goal": "目標設定・編集",
+        "review": "振り返り（weekly/monthly）",
+        "stats": "統計・グラフ表示"
+      }
+    },
+    "habit": {
+      "description": "習慣管理機能",
+      "subcommands": {
+        "add": "新しい習慣を追加",
+        "list": "習慣一覧を表示",
+        "done": "習慣を完了としてマーク",
+        "edit": "習慣を編集",
+        "delete": "習慣を削除",
+        "calendar": "カレンダー表示",
+        "stats": "習慣の統計表示"
+      }
+    },
+    "weight": {
+      "description": "体重管理機能",
+      "subcommands": {
+        "record": "今日の体重を記録",
+        "view": "体重履歴を表示",
+        "graph": "体重グラフを表示",
+        "goal": "体重目標を設定",
+        "stats": "体重統計を表示"
+      }
+    }
+  },
+  "weight_management": {
+    "healthy_bmi_range": {
+      "min": 18.5,
+      "max": 24.9
+    },
+    "safe_weight_loss": {
+      "weekly_min": 0.25,
+      "weekly_max": 1.0
+    }
+  },
+  "habit_frequencies": {
+    "daily": "毎日",
+    "weekly": "週に数回",
+    "custom": "カスタム"
+  },
+  "habit_difficulties": {
+    "easy": { "name": "簡単", "emoji": "🟢", "points": 1 },
+    "normal": { "name": "普通", "emoji": "🟡", "points": 2 },
+    "hard": { "name": "難しい", "emoji": "🔴", "points": 3 }
+  },
+  "google_sheets": {
+    "diary_sheet_name": "diary_data",
+    "habit_sheet_name": "habit_data",
+    "habit_logs_sheet_name": "habit_logs",
+    "weight_sheet_name": "weight_data",
+    "goals_sheet_name": "goals_data",
+    "user_profile_sheet_name": "user_profile",
+    "routine_sheet_name": "routines_master",
+    "routine_steps_sheet_name": "routine_steps", 
+    "routine_executions_sheet_name": "routine_executions",
+    "routine_step_logs_sheet_name": "routine_step_logs"
+  }
+}
