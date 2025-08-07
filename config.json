@@ -27,6 +27,22 @@
       }
     ]
   },
+  "wakeup_triggers": {
+    "keywords": ["起きた", "おはよう", "おはよ", "good morning", "wake up", "おきた"],
+    "enabled": true,
+    "cooldown_minutes": 60,
+    "channels": ["部屋", "日記", "習慣管理"],
+    "description": "起床メッセージを検知して朝の通知セットを送信"
+  },
+  "morning_notifications": {
+    "enabled": true,
+    "include_whoami": true,
+    "include_weight": true,
+    "include_habits": true,
+    "include_routines": true,
+    "delay_between_notifications": 2000,
+    "description": "朝の通知セットの設定"
+  },
   "mood_emojis": {
     "😊": "最高",
     "🙂": "良い",
@@ -98,6 +114,25 @@
     "routine_sheet_name": "routines_master",
     "routine_steps_sheet_name": "routine_steps", 
     "routine_executions_sheet_name": "routine_executions",
-    "routine_step_logs_sheet_name": "routine_step_logs"
+    "routine_step_logs_sheet_name": "routine_step_logs",
+    "habit_notifications_sheet_name": "habit_notifications",
+    "routine_notifications_sheet_name": "routine_notifications",
+    "whoami_sheet_name": "whoami_data"
+  },
+  "user_experience": {
+    "morning_routine_flow": {
+      "step1": "Who Am I 確認",
+      "step2": "体重記録", 
+      "step3": "習慣リマインダー",
+      "step4": "ルーティン開始"
+    },
+    "skip_options": {
+      "allow_skip": true,
+      "skip_messages": {
+        "whoami": "⏭️ Who Am I をスキップしました。今日も良い一日を！",
+        "weight": "⏭️ 体重記録を後回しにしました。忘れずに記録してくださいね！",
+        "routine": "⏭️ ルーティンを後で実行します。お疲れ様でした！"
+      }
+    }
   }
 }
