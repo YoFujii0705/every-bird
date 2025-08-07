@@ -208,7 +208,7 @@ function createCommand() {
         );
 }
 
-// 体重記録処理（タイムアウト対策版）
+// 体重記録処理（修正版）
 async function handleWeightRecord(interaction) {
     const weight = interaction.options.getNumber('weight');
     const memo = interaction.options.getString('memo') || '';
@@ -241,21 +241,31 @@ async function handleWeightRecord(interaction) {
             }
         }
         
-        // 初回からの変化を計算（非同期で、エラーが発生しても続行）
+        // 初回からの変化を計算（エラーハンドリング改善版）
         let firstChangeText = '';
         let firstChangeData = null;
+        
         try {
+            console.log('🔍 初回からの変化計算を開始...');
             firstChangeData = await calculations.getChangeFromFirst(userId);
-            if (firstChangeData && firstChangeData.change !== '0.0') {
+            console.log('📊 取得した変化データ:', firstChangeData);
+            
+            if (firstChangeData && firstChangeData.change !== null && firstChangeData.change !== '0.0') {
                 firstChangeText = ` 開始時比: ${firstChangeData.changeText}`;
+                console.log('✅ 初回からの変化テキスト:', firstChangeText);
+            } else {
+                console.log('⚠️ 初回からの変化データが無効:', firstChangeData);
             }
         } catch (changeError) {
-            console.error('初回からの変化計算エラー:', changeError);
+            console.error('❌ 初回からの変化計算エラー:', changeError);
+            console.error('❌ エラー詳細:', changeError.message);
+            console.error('❌ エラースタック:', changeError.stack);
             // エラーが発生してもメイン処理は続行
         }
         
         // 最終的な変化テキスト
         const fullChangeText = changeText + firstChangeText;
+        console.log('🔤 最終的な変化テキスト:', fullChangeText);
         
         const embed = new EmbedBuilder()
             .setTitle(`⚖️ 体重を記録しました ${existingEntry ? '(更新)' : ''}`)
@@ -268,19 +278,28 @@ async function handleWeightRecord(interaction) {
             .setTimestamp();
         
         // 初回からの変化詳細情報を追加（情報がある場合のみ）
-        if (firstChangeData) {
+        if (firstChangeData && firstChangeData.startDate && firstChangeData.daysSinceStart !== undefined) {
             embed.addFields({
                 name: '📊 記録詳細',
                 value: `開始日: ${firstChangeData.startDate}\n記録期間: ${firstChangeData.daysSinceStart}日`,
                 inline: false
             });
+            console.log('📊 記録詳細を追加:', {
+                startDate: firstChangeData.startDate,
+                daysSinceStart: firstChangeData.daysSinceStart
+            });
+        } else {
+            console.log('⚠️ 記録詳細の追加をスキップ:', firstChangeData);
         }
         
         // deferReply を使用しているので editReply で応答
         await interaction.editReply({ embeds: [embed] });
+        console.log('✅ 体重記録レスポンス送信完了');
         
     } catch (error) {
-        console.error('体重記録エラー:', error);
+        console.error('❌ 体重記録メインエラー:', error);
+        console.error('❌ エラー詳細:', error.message);
+        console.error('❌ エラースタック:', error.stack);
         
         // エラー時の応答
         try {
@@ -290,7 +309,7 @@ async function handleWeightRecord(interaction) {
                 await interaction.reply({ content: '体重の記録中にエラーが発生しました。', flags: 64 });
             }
         } catch (replyError) {
-            console.error('エラー応答失敗:', replyError);
+            console.error('❌ エラー応答失敗:', replyError);
         }
     }
 }
