@@ -1,33 +1,4 @@
-"wakeup_triggers": {
-    "keywords": ["起きた", "おはよう", "おはよ", "good morning", "wake up", "おきた"],
-    "enabled": true,
-    "cooldown_minutes": 60,
-    "channels": ["general", "日記", "習慣管理"],
-    "description": "起床メッセージを検知して朝の通知セットを送信"
-  },
-  "sleep_triggers": {
-    "keywords": ["寝る", "おやすみ", "good night", "ねる", "おやすみなさい"],
-    "enabled": true,
-    "cooldown_minutes": 60,
-    "channels": ["部屋", "日記", "習慣管理"],
-    "description": "就寝メッセージを検知して夜の通知セットを送信"
-  },
-  "morning_notifications": {
-    "enabled": true,
-    "include_whoami": true,
-    "include_weight": true,
-    "include_habits": false,
-    "include_routines": true,
-    "whoami_ephemeral": true,
-    "delay_between_notifications": 2000,
-    "description": "朝の通知セットの設定（習慣リマインダー無効、Who Am I は自分のみ表示）"
-  },
-  "evening_notifications": {
-    "enabled": true,
-    "include_routines": true,
-    "delay_between_notifications": 1000,
-    "description": "夜の通知セットの設定"
-  },{
+{
   "bot": {
     "name": "Habit & Diary Bot",
     "description": "習慣管理と日記機能を提供するBot"
@@ -60,17 +31,32 @@
     "keywords": ["起きた", "おはよう", "おはよ", "good morning", "wake up", "おきた"],
     "enabled": true,
     "cooldown_minutes": 60,
-    "channels": ["部屋", "日記", "習慣管理"],
+    "channels": ["general", "日記", "習慣管理"],
     "description": "起床メッセージを検知して朝の通知セットを送信"
+  },
+  "sleep_triggers": {
+    "keywords": ["寝る", "おやすみ", "good night", "ねる", "おやすみなさい"],
+    "enabled": true,
+    "cooldown_minutes": 60,
+    "channels": ["general", "日記", "習慣管理"],
+    "description": "就寝メッセージを検知して夜の通知セットを送信"
   },
   "morning_notifications": {
     "enabled": true,
     "include_whoami": true,
     "include_weight": true,
-    "include_habits": true,
+    "include_habits": false,
     "include_routines": true,
+    "whoami_send_dm": true,
+    "whoami_fallback_delete_minutes": 5,
     "delay_between_notifications": 2000,
-    "description": "朝の通知セットの設定"
+    "description": "朝の通知セットの設定（習慣リマインダー無効、Who Am I はDMまたは5分後削除）"
+  },
+  "evening_notifications": {
+    "enabled": true,
+    "include_routines": true,
+    "delay_between_notifications": 1000,
+    "description": "夜の通知セットの設定"
   },
   "mood_emojis": {
     "😊": "最高",
@@ -152,8 +138,10 @@
     "morning_routine_flow": {
       "step1": "Who Am I 確認",
       "step2": "体重記録", 
-      "step3": "習慣リマインダー",
-      "step4": "ルーティン開始"
+      "step3": "朝のルーティン開始"
+    },
+    "evening_routine_flow": {
+      "step1": "夜のルーティン開始"
     },
     "skip_options": {
       "allow_skip": true,
