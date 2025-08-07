@@ -2267,68 +2267,206 @@ async function forceReloadSpreadsheet() {
     }
 }
 
-// 最初の体重記録を取得
+// 最初の体重記録を取得（改善版）
 async function getFirstWeightEntry(userId) {
     try {
         const spreadsheetId = process.env.GOOGLE_SHEET_ID;
         const sheetName = config.google_sheets.weight_sheet_name || 'weight_data';
         const range = `${sheetName}!A:E`;
         
+        console.log('📊 getFirstWeightEntry 開始:', {
+            userId: userId.substring(0, 6) + '...',
+            spreadsheetId: spreadsheetId ? spreadsheetId.substring(0, 15) + '...' : 'undefined',
+            sheetName
+        });
+        
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
             range
         });
         
         const rows = response.data.values || [];
+        console.log('📊 取得した行数:', rows.length);
+        
+        if (rows.length <= 1) {
+            console.log('⚠️ データが存在しません（ヘッダーのみ）');
+            return null;
+        }
         
         // ヘッダー行をスキップして、指定ユーザーの記録を日付順でソート
-        const userEntries = rows.slice(1)
-            .filter(row => row[1] === userId && row[0] && row[2]) // userId, date, weightが存在
-            .map(row => ({
-                date: row[0],
-                userId: row[1],
-                weight: row[2],
-                memo: row[3] || ''
-            }))
-            .sort((a, b) => moment(a.date).diff(moment(b.date))); // 日付の昇順
+        const userEntries = [];
         
-        return userEntries.length > 0 ? userEntries[0] : null;
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            
+            // データの検証
+            if (!row || row.length < 3) {
+                console.log(`⚠️ 行${i}をスキップ: データ不足`, row);
+                continue;
+            }
+            
+            const entryDate = row[0];
+            const entryUserId = row[1];
+            const entryWeight = row[2];
+            
+            // ユーザーIDと必要データの検証
+            if (entryUserId !== userId) {
+                continue; // 他のユーザーなのでスキップ
+            }
+            
+            if (!entryDate || !entryWeight) {
+                console.log(`⚠️ 行${i}をスキップ: 必要データなし`, { entryDate, entryWeight });
+                continue;
+            }
+            
+            // 日付の妥当性チェック
+            if (!moment(entryDate, 'YYYY-MM-DD', true).isValid()) {
+                console.log(`⚠️ 行${i}をスキップ: 無効な日付`, entryDate);
+                continue;
+            }
+            
+            // 体重の妥当性チェック
+            const weightNum = parseFloat(entryWeight);
+            if (isNaN(weightNum) || weightNum <= 0 || weightNum > 500) {
+                console.log(`⚠️ 行${i}をスキップ: 無効な体重`, entryWeight);
+                continue;
+            }
+            
+            userEntries.push({
+                date: entryDate,
+                userId: entryUserId,
+                weight: entryWeight,
+                memo: row[3] || ''
+            });
+        }
+        
+        console.log('📊 有効なユーザーエントリー数:', userEntries.length);
+        
+        if (userEntries.length === 0) {
+            console.log('⚠️ 該当ユーザーのデータが見つかりません');
+            return null;
+        }
+        
+        // 日付の昇順でソート（最初のエントリーを取得するため）
+        userEntries.sort((a, b) => moment(a.date).diff(moment(b.date)));
+        
+        const firstEntry = userEntries[0];
+        console.log('✅ 最初のエントリー:', {
+            date: firstEntry.date,
+            weight: firstEntry.weight,
+            memo: firstEntry.memo
+        });
+        
+        return firstEntry;
         
     } catch (error) {
-        console.error('最初の体重記録取得エラー:', error);
+        console.error('❌ 最初の体重記録取得エラー:', error);
+        console.error('❌ エラーメッセージ:', error.message);
+        if (error.response) {
+            console.error('❌ APIレスポンスエラー:', error.response.data);
+        }
         return null;
     }
 }
 
-// 最新の体重記録を取得
+// 最新の体重記録を取得（改善版）
 async function getLatestWeightEntry(userId) {
     try {
         const spreadsheetId = process.env.GOOGLE_SHEET_ID;
         const sheetName = config.google_sheets.weight_sheet_name || 'weight_data';
         const range = `${sheetName}!A:E`;
         
+        console.log('📊 getLatestWeightEntry 開始:', {
+            userId: userId.substring(0, 6) + '...',
+            spreadsheetId: spreadsheetId ? spreadsheetId.substring(0, 15) + '...' : 'undefined',
+            sheetName
+        });
+        
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
             range
         });
         
         const rows = response.data.values || [];
+        console.log('📊 取得した行数:', rows.length);
         
-        // ヘッダー行をスキップして、指定ユーザーの記録を日付順でソート
-        const userEntries = rows.slice(1)
-            .filter(row => row[1] === userId && row[0] && row[2]) // userId, date, weightが存在
-            .map(row => ({
-                date: row[0],
-                userId: row[1],
-                weight: row[2],
+        if (rows.length <= 1) {
+            console.log('⚠️ データが存在しません（ヘッダーのみ）');
+            return null;
+        }
+        
+        // ヘッダー行をスキップして、指定ユーザーの記録を収集
+        const userEntries = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            
+            // データの検証
+            if (!row || row.length < 3) {
+                console.log(`⚠️ 行${i}をスキップ: データ不足`, row);
+                continue;
+            }
+            
+            const entryDate = row[0];
+            const entryUserId = row[1];
+            const entryWeight = row[2];
+            
+            // ユーザーIDと必要データの検証
+            if (entryUserId !== userId) {
+                continue; // 他のユーザーなのでスキップ
+            }
+            
+            if (!entryDate || !entryWeight) {
+                console.log(`⚠️ 行${i}をスキップ: 必要データなし`, { entryDate, entryWeight });
+                continue;
+            }
+            
+            // 日付の妥当性チェック
+            if (!moment(entryDate, 'YYYY-MM-DD', true).isValid()) {
+                console.log(`⚠️ 行${i}をスキップ: 無効な日付`, entryDate);
+                continue;
+            }
+            
+            // 体重の妥当性チェック
+            const weightNum = parseFloat(entryWeight);
+            if (isNaN(weightNum) || weightNum <= 0 || weightNum > 500) {
+                console.log(`⚠️ 行${i}をスキップ: 無効な体重`, entryWeight);
+                continue;
+            }
+            
+            userEntries.push({
+                date: entryDate,
+                userId: entryUserId,
+                weight: entryWeight,
                 memo: row[3] || ''
-            }))
-            .sort((a, b) => moment(b.date).diff(moment(a.date))); // 日付の降順（新しい方が先）
+            });
+        }
         
-        return userEntries.length > 0 ? userEntries[0] : null;
+        console.log('📊 有効なユーザーエントリー数:', userEntries.length);
+        
+        if (userEntries.length === 0) {
+            console.log('⚠️ 該当ユーザーのデータが見つかりません');
+            return null;
+        }
+        
+        // 日付の降順でソート（最新のエントリーを取得するため）
+        userEntries.sort((a, b) => moment(b.date).diff(moment(a.date)));
+        
+        const latestEntry = userEntries[0];
+        console.log('✅ 最新のエントリー:', {
+            date: latestEntry.date,
+            weight: latestEntry.weight,
+            memo: latestEntry.memo
+        });
+        
+        return latestEntry;
         
     } catch (error) {
-        console.error('最新の体重記録取得エラー:', error);
+        console.error('❌ 最新の体重記録取得エラー:', error);
+        console.error('❌ エラーメッセージ:', error.message);
+        if (error.response) {
+            console.error('❌ APIレスポンスエラー:', error.response.data);
+        }
         return null;
     }
 }
