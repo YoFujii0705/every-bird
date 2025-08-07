@@ -208,7 +208,7 @@ function createCommand() {
         );
 }
 
-// 体重記録処理（修正版）
+// 体重記録処理（前回比修正版）
 async function handleWeightRecord(interaction) {
     const weight = interaction.options.getNumber('weight');
     const memo = interaction.options.getString('memo') || '';
@@ -223,14 +223,15 @@ async function handleWeightRecord(interaction) {
         const existingEntry = await sheetsUtils.getWeightEntry(userId, today);
         
         // 前回の記録を取得（保存前に取得）
-        const lastEntry = await sheetsUtils.getLatestWeightEntry(userId);
+        // 今日以外の最新の記録を取得するための専用関数を使用
+        const lastEntry = await getLastDifferentDayEntry(userId, today);
         
         // 体重を保存
         await sheetsUtils.saveWeightToSheet(userId, today, weight, memo);
         
-        // 前回比の計算
+        // 前回比の計算（改良版）
         let changeText = '';
-        if (lastEntry && lastEntry.weight && lastEntry.date !== today) {
+        if (lastEntry && lastEntry.weight) {
             const change = weight - parseFloat(lastEntry.weight);
             if (change > 0) {
                 changeText = `前回比: +${change.toFixed(1)}kg`;
@@ -239,9 +240,17 @@ async function handleWeightRecord(interaction) {
             } else {
                 changeText = '前回比: 変化なし';
             }
+            console.log('📊 前回比計算:', {
+                currentWeight: weight,
+                lastWeight: lastEntry.weight,
+                lastDate: lastEntry.date,
+                change: change.toFixed(1)
+            });
+        } else {
+            console.log('⚠️ 前回のエントリーが見つかりません');
         }
         
-        // 初回からの変化を計算（エラーハンドリング改善版）
+        // 初回からの変化を計算
         let firstChangeText = '';
         let firstChangeData = null;
         
@@ -259,8 +268,6 @@ async function handleWeightRecord(interaction) {
         } catch (changeError) {
             console.error('❌ 初回からの変化計算エラー:', changeError);
             console.error('❌ エラー詳細:', changeError.message);
-            console.error('❌ エラースタック:', changeError.stack);
-            // エラーが発生してもメイン処理は続行
         }
         
         // 最終的な変化テキスト
@@ -277,19 +284,13 @@ async function handleWeightRecord(interaction) {
             .setColor(0x00AE86)
             .setTimestamp();
         
-        // 初回からの変化詳細情報を追加（情報がある場合のみ）
+        // 初回からの変化詳細情報を追加
         if (firstChangeData && firstChangeData.startDate && firstChangeData.daysSinceStart !== undefined) {
             embed.addFields({
                 name: '📊 記録詳細',
                 value: `開始日: ${firstChangeData.startDate}\n記録期間: ${firstChangeData.daysSinceStart}日`,
                 inline: false
             });
-            console.log('📊 記録詳細を追加:', {
-                startDate: firstChangeData.startDate,
-                daysSinceStart: firstChangeData.daysSinceStart
-            });
-        } else {
-            console.log('⚠️ 記録詳細の追加をスキップ:', firstChangeData);
         }
         
         // deferReply を使用しているので editReply で応答
@@ -298,8 +299,6 @@ async function handleWeightRecord(interaction) {
         
     } catch (error) {
         console.error('❌ 体重記録メインエラー:', error);
-        console.error('❌ エラー詳細:', error.message);
-        console.error('❌ エラースタック:', error.stack);
         
         // エラー時の応答
         try {
@@ -311,6 +310,93 @@ async function handleWeightRecord(interaction) {
         } catch (replyError) {
             console.error('❌ エラー応答失敗:', replyError);
         }
+    }
+}
+
+// 今日以外の最新の記録を取得する専用関数
+async function getLastDifferentDayEntry(userId, excludeDate) {
+    try {
+        const { google } = require('googleapis');
+        const config = require('../config.json');
+        
+        // Google Sheets API初期化
+        const auth = new google.auth.GoogleAuth({
+            keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+            scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        });
+        const sheets = google.sheets({ version: 'v4', auth });
+        
+        const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+        const sheetName = config.google_sheets.weight_sheet_name || 'weight_data';
+        const range = `${sheetName}!A:E`;
+        
+        console.log('📊 今日以外の最新エントリーを取得中...', { excludeDate });
+        
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range
+        });
+        
+        const rows = response.data.values || [];
+        
+        if (rows.length <= 1) {
+            console.log('⚠️ データが存在しません');
+            return null;
+        }
+        
+        // ユーザーのデータを収集（今日以外）
+        const userEntries = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            
+            if (!row || row.length < 3) continue;
+            
+            const entryDate = row[0];
+            const entryUserId = row[1];
+            const entryWeight = row[2];
+            
+            // 今日のデータはスキップ
+            if (entryDate === excludeDate) continue;
+            
+            if (entryUserId !== userId) continue;
+            if (!entryDate || !entryWeight) continue;
+            
+            // 日付の妥当性チェック
+            if (!moment(entryDate, 'YYYY-MM-DD', true).isValid()) continue;
+            
+            // 体重の妥当性チェック
+            const weightNum = parseFloat(entryWeight);
+            if (isNaN(weightNum) || weightNum <= 0 || weightNum > 500) continue;
+            
+            userEntries.push({
+                date: entryDate,
+                weight: entryWeight,
+                memo: row[3] || ''
+            });
+        }
+        
+        console.log('📊 今日以外の有効なエントリー数:', userEntries.length);
+        
+        if (userEntries.length === 0) {
+            console.log('⚠️ 今日以外のデータが見つかりません');
+            return null;
+        }
+        
+        // 日付の降順でソート（最新を取得）
+        userEntries.sort((a, b) => moment(b.date).diff(moment(a.date)));
+        
+        const lastEntry = userEntries[0];
+        console.log('✅ 今日以外の最新エントリー:', {
+            date: lastEntry.date,
+            weight: lastEntry.weight
+        });
+        
+        return lastEntry;
+        
+    } catch (error) {
+        console.error('❌ 今日以外の最新エントリー取得エラー:', error);
+        return null;
     }
 }
 
