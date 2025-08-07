@@ -297,43 +297,57 @@ client.on(Events.InteractionCreate, async interaction => {
                     return;
                 }
 
-                // ルーティン関連のボタン処理を最初にチェック
-                if (customId.startsWith('routine_') || 
-                    ['routine_next', 'routine_skip', 'routine_pause', 'routine_stop'].includes(customId)) {
-                    
-                    console.log('🔄 ルーティンボタンを検出:', customId);
-                    
-                    // ルーティンハンドラーに委譲
-                    if (routineHandler) {
-                        console.log('✅ ルーティンハンドラーに処理を委譲');
-                        
-                        try {
-                            await routineHandler.handleButtonInteraction(interaction);
-                            console.log('✅ ルーティンボタン処理完了');
-                        } catch (routineError) {
-                            console.error('❌ ルーティンボタン処理エラー:', routineError);
-                            
-                            // エラーが発生した場合の応答
-                            if (!interaction.replied && !interaction.deferred) {
-                                await interaction.reply({
-                                    content: '❌ ルーティン操作中にエラーが発生しました。',
-                                    ephemeral: true
-                                });
-                            } else if (interaction.deferred) {
-                                await interaction.editReply({
-                                    content: '❌ ルーティン操作中にエラーが発生しました。'
-                                });
-                            }
-                        }
-                        return;
-                    } else {
-                        console.log('❌ ルーティンハンドラーが見つかりません');
-                        await interaction.editReply({
-                            content: '❌ ルーティンハンドラーが初期化されていません。'
-                        });
-                        return;
-                    }
-                }
+                // 緊急修正: ルーティンボタン処理（bot.js内）
+if (customId.startsWith('routine_') || 
+    ['routine_next', 'routine_skip', 'routine_pause', 'routine_stop'].includes(customId)) {
+    
+    console.log('🔄 ルーティンボタンを検出:', customId);
+    
+    try {
+        // まず簡単なテスト応答
+        if (customId === 'routine_start_1') {
+            await interaction.editReply({
+                content: '🧪 テスト: ルーティン開始ボタンが押されました！',
+                components: []
+            });
+            return;
+        }
+        
+        // 他のルーティンボタンの場合
+        if (routineHandler) {
+            console.log('✅ ルーティンハンドラーに処理を委譲');
+            
+            // タイムアウト対策
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('処理タイムアウト')), 2000);
+            });
+            
+            await Promise.race([
+                routineHandler.handleButtonInteraction(interaction),
+                timeoutPromise
+            ]);
+            
+            console.log('✅ ルーティンボタン処理完了');
+        } else {
+            console.log('❌ ルーティンハンドラーが見つかりません');
+            await interaction.editReply({
+                content: '❌ ルーティンハンドラーが初期化されていません。'
+            });
+        }
+    } catch (error) {
+        console.error('❌ ルーティンボタン処理エラー:', error);
+        
+        try {
+            await interaction.editReply({
+                content: `❌ ルーティン処理エラー: ${error.message}`,
+                components: []
+            });
+        } catch (replyError) {
+            console.error('エラーメッセージ送信失敗:', replyError);
+        }
+    }
+    return;
+}
                 
                 // 🎯 統合目標ダッシュボードのボタン処理
                 if (customId === 'goals_dashboard') {
