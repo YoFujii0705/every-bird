@@ -758,41 +758,86 @@ function generateEnhancedWeightGraph(entries, targetWeight = null) {
     return graph;
 }
 
-// calculations.js の getChangeFromFirst 関数（改善版）
+// calculations.js の getChangeFromFirst 関数（直接API呼び出し版）
 async function getChangeFromFirst(userId) {
     console.log('🔍 getChangeFromFirst 開始:', { userId: userId.substring(0, 6) + '...' });
     
     try {
-        // 最初のエントリーを取得
-        console.log('📊 最初の体重エントリーを取得中...');
-        const firstEntry = await sheetsUtils.getFirstWeightEntry(userId);
+        const { google } = require('googleapis');
+        const config = require('../config.json');
         
-        // 最新のエントリーを取得
-        console.log('📊 最新の体重エントリーを取得中...');
-        const latestEntry = await sheetsUtils.getLatestWeightEntry(userId);
+        // Google Sheets API初期化
+        const auth = new google.auth.GoogleAuth({
+            keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+            scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        });
+        const sheets = google.sheets({ version: 'v4', auth });
         
-        console.log('📊 取得したエントリー:', {
-            firstEntry: firstEntry ? {
-                date: firstEntry.date,
-                weight: firstEntry.weight,
-                type: typeof firstEntry.weight
-            } : null,
-            latestEntry: latestEntry ? {
-                date: latestEntry.date,
-                weight: latestEntry.weight,
-                type: typeof latestEntry.weight
-            } : null
+        const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+        const sheetName = config.google_sheets.weight_sheet_name || 'weight_data';
+        const range = `${sheetName}!A:E`;
+        
+        console.log('📊 Google Sheets APIに直接アクセス中...');
+        
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range
         });
         
-        if (!firstEntry) {
-            console.log('❌ 最初のエントリーがありません');
+        const rows = response.data.values || [];
+        console.log('📊 取得した行数:', rows.length);
+        
+        if (rows.length <= 1) {
+            console.log('⚠️ データが存在しません（ヘッダーのみ）');
             return null;
         }
         
-        if (!latestEntry) {
-            console.log('❌ 最新のエントリーがありません');
+        // ユーザーのデータを収集
+        const userEntries = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            
+            if (!row || row.length < 3) continue;
+            
+            const entryDate = row[0];
+            const entryUserId = row[1];
+            const entryWeight = row[2];
+            
+            if (entryUserId !== userId) continue;
+            if (!entryDate || !entryWeight) continue;
+            
+            // 日付の妥当性チェック
+            if (!moment(entryDate, 'YYYY-MM-DD', true).isValid()) continue;
+            
+            // 体重の妥当性チェック
+            const weightNum = parseFloat(entryWeight);
+            if (isNaN(weightNum) || weightNum <= 0 || weightNum > 500) continue;
+            
+            userEntries.push({
+                date: entryDate,
+                weight: entryWeight,
+                memo: row[3] || ''
+            });
+        }
+        
+        console.log('📊 有効なユーザーエントリー数:', userEntries.length);
+        
+        if (userEntries.length < 2) {
+            console.log('ℹ️ エントリーが2つ未満のため、開始時比較をスキップ');
             return null;
         }
+        
+        // 日付でソート
+        userEntries.sort((a, b) => moment(a.date).diff(moment(b.date)));
+        
+        const firstEntry = userEntries[0];
+        const latestEntry = userEntries[userEntries.length - 1];
+        
+        console.log('📊 比較するエントリー:', {
+            first: { date: firstEntry.date, weight: firstEntry.weight },
+            latest: { date: latestEntry.date, weight: latestEntry.weight }
+        });
         
         // 最初と最新が同じ日付の場合（初回記録）
         if (firstEntry.date === latestEntry.date) {
@@ -803,14 +848,7 @@ async function getChangeFromFirst(userId) {
         const firstWeight = parseFloat(firstEntry.weight);
         const latestWeight = parseFloat(latestEntry.weight);
         
-        console.log('🔢 重量の数値変換:', {
-            firstWeight,
-            latestWeight,
-            firstWeightIsValid: !isNaN(firstWeight) && firstWeight > 0,
-            latestWeightIsValid: !isNaN(latestWeight) && latestWeight > 0
-        });
-        
-        if (isNaN(firstWeight) || isNaN(latestWeight) || firstWeight <= 0 || latestWeight <= 0) {
+        if (isNaN(firstWeight) || isNaN(latestWeight)) {
             console.log('❌ 重量データが無効です');
             return null;
         }
@@ -847,7 +885,6 @@ async function getChangeFromFirst(userId) {
         return null;
     }
 }
-
 module.exports = {
     // 気分関連
     calculateAverageMood,
