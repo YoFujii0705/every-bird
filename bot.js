@@ -216,7 +216,7 @@ try {
     console.log('🤖 Botが正常に起動しました！');
 });
 
-// ===== インタラクション処理（修正版） =====
+// ===== インタラクション処理（修正版・重複削除） =====
 client.on(Events.InteractionCreate, async interaction => {
     try {
         if (interaction.isChatInputCommand()) {
@@ -252,8 +252,23 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log('🔍 ボタンが押されました:', customId);
             console.log('🔍 ユーザーID:', interaction.user.id);
             
+            // ⭐ 最初に必ずdeferを実行（3秒ルール対策）
             try {
-                // 🔔 Habit通知関連のボタン処理を追加
+                if (!interaction.deferred && !interaction.replied) {
+                    // updateかreplyかは処理内容によって決める
+                    if (customId.includes('quick_done') || customId.includes('snooze')) {
+                        await interaction.deferUpdate(); // メッセージを更新する場合
+                    } else {
+                        await interaction.deferReply({ ephemeral: true }); // 新しい返信の場合
+                    }
+                }
+            } catch (deferError) {
+                console.error('defer実行エラー:', deferError);
+                return; // deferに失敗したら処理を中断
+            }
+            
+            try {
+                // 🔔 Habit通知関連のボタン処理
                 if (customId.startsWith('habit_quick_done_') || 
                     customId.startsWith('habit_snooze_') ||
                     customId === 'habit_calendar_view' ||
@@ -268,9 +283,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         return;
                     } else {
                         console.log('❌ Habit通知ハンドラーが見つかりません');
-                        await interaction.reply({
-                            content: '❌ Habit通知ハンドラーが初期化されていません。',
-                            ephemeral: true
+                        await interaction.editReply({
+                            content: '❌ Habit通知ハンドラーが初期化されていません。'
                         });
                         return;
                     }
@@ -305,14 +319,17 @@ client.on(Events.InteractionCreate, async interaction => {
                                     content: '❌ ルーティン操作中にエラーが発生しました。',
                                     ephemeral: true
                                 });
+                            } else if (interaction.deferred) {
+                                await interaction.editReply({
+                                    content: '❌ ルーティン操作中にエラーが発生しました。'
+                                });
                             }
                         }
                         return;
                     } else {
                         console.log('❌ ルーティンハンドラーが見つかりません');
-                        await interaction.reply({
-                            content: '❌ ルーティンハンドラーが初期化されていません。',
-                            ephemeral: true
+                        await interaction.editReply({
+                            content: '❌ ルーティンハンドラーが初期化されていません。'
                         });
                         return;
                     }
@@ -407,7 +424,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     if (interaction.user.id === userId) {
                         await showQuickWeightModal(interaction);
                     } else {
-                        await interaction.reply({ content: 'これはあなた向けのリマインダーではありません。', ephemeral: true });
+                        await interaction.editReply({ 
+                            content: 'これはあなた向けのリマインダーではありません。' 
+                        });
                     }
                     
                 } else if (customId === 'write_diary') {
@@ -478,13 +497,22 @@ client.on(Events.InteractionCreate, async interaction => {
                 
             } catch (error) {
                 console.error('ボタン処理エラー:', error);
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ 
-                        content: 'ボタン処理中にエラーが発生しました。', 
-                        ephemeral: true 
-                    });
+                try {
+                    if (interaction.deferred) {
+                        await interaction.editReply({ 
+                            content: 'ボタン処理中にエラーが発生しました。'
+                        });
+                    } else if (!interaction.replied) {
+                        await interaction.reply({ 
+                            content: 'ボタン処理中にエラーが発生しました。', 
+                            ephemeral: true 
+                        });
+                    }
+                } catch (replyError) {
+                    console.error('エラーメッセージ送信失敗:', replyError);
                 }
             }
+            
         } else if (interaction.isStringSelectMenu()) {
             const customId = interaction.customId;
             
