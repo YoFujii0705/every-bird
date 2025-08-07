@@ -115,12 +115,19 @@ async function showIdentityStep(interaction, whoamiData) {
                 .setEmoji('🎯')
         );
 
-    const method = interaction.replied || interaction.deferred ? 'editReply' : 'reply';
-    await interaction[method]({
-        embeds: [embed],
-        components: [row],
-        ephemeral: true
-    });
+    // 最初の表示かどうかで判定
+    if (interaction.replied || interaction.deferred) {
+        await interaction.editReply({
+            embeds: [embed],
+            components: [row]
+        });
+    } else {
+        await interaction.reply({
+            embeds: [embed],
+            components: [row],
+            ephemeral: true
+        });
+    }
 }
 
 // ステップ2: 大きな目標表示
@@ -434,6 +441,7 @@ async function handleButtonInteraction(interaction) {
         
         switch (customId) {
             case 'whoami_morning_start':
+            case 'whoami_setup_start':  // 朝の通知用
             case 'whoami_start_from_view':
             case 'whoami_restart':
                 await showIdentityStep(interaction, whoamiData);
