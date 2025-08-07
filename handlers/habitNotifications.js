@@ -452,105 +452,160 @@ class HabitNotificationsHandler {
     }
   }
 
-  // クイック完了処理
-  async handleQuickDone(interaction, habitId) {
-    const userId = interaction.user.id;
-    const today = require('moment')().format('YYYY-MM-DD');
+  // クイック完了処理（修正版）
+async handleQuickDone(interaction, habitId) {
+  const userId = interaction.user.id;
+  const today = require('moment')().format('YYYY-MM-DD');
 
-    try {
-      await interaction.deferUpdate();
-
-      const habit = await this.sheetsUtils.getHabitById(habitId);
-      if (!habit) {
-        return await interaction.editReply({
-          content: '❌ 習慣が見つかりません。',
-          components: []
-        });
-      }
-
-      // 既に完了済みかチェック
-      const todayLogs = await this.sheetsUtils.getHabitLogsForDate(userId, today);
-      const alreadyDone = todayLogs.some(log => log.habitId === habitId);
-
-      if (alreadyDone) {
-        return await interaction.editReply({
-          content: `✅ 「${habit.name}」は既に今日完了済みです！`,
-          components: []
-        });
-      }
-
-      // 習慣を完了
-      await this.sheetsUtils.saveHabitLog(userId, habitId, today);
-      const newStreak = await this.sheetsUtils.updateHabitStreak(userId, habitId);
-
-      const embed = new EmbedBuilder()
-        .setTitle('🎉 習慣完了！')
-        .setDescription(`**${habit.name}** を完了しました！`)
-        .addFields(
-          { name: '🔥 現在のストリーク', value: `${newStreak}日連続`, inline: true },
-          { name: '📅 実行日', value: today, inline: true }
-        )
-        .setColor('#00FF00')
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed], components: [] });
-    } catch (error) {
-      console.error('クイック完了エラー:', error);
-      await interaction.editReply({
-        content: '❌ 習慣の完了処理に失敗しました。',
+  try {
+    // メッセージの年齢をチェック（15分制限対策）
+    const messageAge = Date.now() - interaction.message.createdTimestamp;
+    if (messageAge > 14 * 60 * 1000) { // 14分経過
+      return await interaction.editReply({
+        content: '⏰ この通知は期限切れです。最新の習慣状況は `/habit status` で確認してください。',
         components: []
       });
     }
-  }
 
-  // スヌーズ処理
-  async handleSnooze(interaction, habitId) {
-    try {
+    // deferが既に実行されているかチェック
+    if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate();
+    }
 
-      const embed = new EmbedBuilder()
-        .setTitle('⏰ 30分後にリマインド')
-        .setDescription('30分後にもう一度お知らせします。')
-        .setColor('#FF9800');
+    const habit = await this.sheetsUtils.getHabitById(habitId);
+    if (!habit) {
+      return await interaction.editReply({
+        content: '❌ 習慣が見つかりません。',
+        components: []
+      });
+    }
 
-      await interaction.editReply({ embeds: [embed], components: [] });
+    // 既に完了済みかチェック
+    const todayLogs = await this.sheetsUtils.getHabitLogsForDate(userId, today);
+    const alreadyDone = todayLogs.some(log => log.habitId === habitId);
 
-      // 30分後にリマインダーを設定
-      setTimeout(async () => {
-        try {
-          const habit = await this.sheetsUtils.getHabitById(habitId);
-          if (habit) {
-            const channel = interaction.channel;
-            const userId = interaction.user.id;
+    if (alreadyDone) {
+      return await interaction.editReply({
+        content: `✅ 「${habit.name}」は既に今日完了済みです！`,
+        components: []
+      });
+    }
 
-            const reminderEmbed = new EmbedBuilder()
-              .setTitle('🔔 スヌーズリマインダー')
-              .setDescription(`<@${userId}> **${habit.name}** の時間です！（再通知）`)
-              .setColor('#00BCD4');
+    // 習慣を完了
+    await this.sheetsUtils.saveHabitLog(userId, habitId, today);
+    const newStreak = await this.sheetsUtils.updateHabitStreak(userId, habitId);
 
-            const row = new ActionRowBuilder()
-              .addComponents(
-                new ButtonBuilder()
-                  .setCustomId(`habit_quick_done_${habitId}`)
-                  .setLabel('✅ 完了！')
-                  .setStyle(ButtonStyle.Success)
-              );
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 習慣完了！')
+      .setDescription(`**${habit.name}** を完了しました！`)
+      .addFields(
+        { name: '🔥 現在のストリーク', value: `${newStreak}日連続`, inline: true },
+        { name: '📅 実行日', value: today, inline: true }
+      )
+      .setColor('#00FF00')
+      .setTimestamp();
 
-            await channel.send({ embeds: [reminderEmbed], components: [row] });
-          }
-        } catch (error) {
-          console.error('スヌーズリマインダー送信エラー:', error);
+    await interaction.editReply({ embeds: [embed], components: [] });
+
+  } catch (error) {
+    console.error('クイック完了エラー:', error);
+    
+    try {
+      // エラー時の応答
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: '❌ 習慣の完了処理に失敗しました。',
+          components: []
+        });
+      } else if (!interaction.replied) {
+        await interaction.reply({
+          content: '❌ 習慣の完了処理に失敗しました。',
+          ephemeral: true
+        });
+      }
+    } catch (replyError) {
+      console.error('エラーメッセージ送信失敗:', replyError);
+    }
+  }
+}
+
+// スヌーズ処理（修正版）
+async handleSnooze(interaction, habitId) {
+  try {
+    // メッセージの年齢をチェック（15分制限対策）
+    const messageAge = Date.now() - interaction.message.createdTimestamp;
+    if (messageAge > 14 * 60 * 1000) { // 14分経過
+      return await interaction.editReply({
+        content: '⏰ この通知は期限切れです。新しいリマインダーは `/habit notify reminder` で設定してください。',
+        components: []
+      });
+    }
+
+    // deferが既に実行されているかチェック
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('⏰ 30分後にリマインド')
+      .setDescription('30分後にもう一度お知らせします。')
+      .setColor('#FF9800');
+
+    await interaction.editReply({ embeds: [embed], components: [] });
+
+    // 30分後にリマインダーを設定
+    setTimeout(async () => {
+      try {
+        const habit = await this.sheetsUtils.getHabitById(habitId);
+        if (habit) {
+          const channel = interaction.channel;
+          const userId = interaction.user.id;
+
+          const reminderEmbed = new EmbedBuilder()
+            .setTitle('🔔 スヌーズリマインダー')
+            .setDescription(`<@${userId}> **${habit.name}** の時間です！（再通知）`)
+            .setColor('#00BCD4')
+            .setTimestamp();
+
+          const row = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(`habit_quick_done_${habitId}`)
+                .setLabel('✅ 完了！')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`habit_snooze_${habitId}`)
+                .setLabel('⏰ また30分後')
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+          await channel.send({ embeds: [reminderEmbed], components: [row] });
         }
-      }, 30 * 60 * 1000); // 30分 = 30 * 60 * 1000ミリ秒
+      } catch (error) {
+        console.error('スヌーズリマインダー送信エラー:', error);
+      }
+    }, 30 * 60 * 1000); // 30分 = 30 * 60 * 1000ミリ秒
 
-    } catch (error) {
-      console.error('スヌーズ処理エラー:', error);
-      await interaction.editReply({
-        content: '❌ スヌーズの設定に失敗しました。',
-        components: []
-      });
+  } catch (error) {
+    console.error('スヌーズ処理エラー:', error);
+    
+    try {
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: '❌ スヌーズの設定に失敗しました。',
+          components: []
+        });
+      } else if (!interaction.replied) {
+        await interaction.reply({
+          content: '❌ スヌーズの設定に失敗しました。',
+          ephemeral: true
+        });
+      }
+    } catch (replyError) {
+      console.error('エラーメッセージ送信失敗:', replyError);
     }
   }
+}
 
   // カレンダー表示
   async handleCalendarView(interaction) {
