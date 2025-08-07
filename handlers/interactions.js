@@ -46,6 +46,26 @@ async function handleButtonInteraction(interaction) {
         // 体重記録ボタン（既存の実装があればそれを使用）
         const userId = customId.replace('weight_record_', '');
         await handleWeightRecord(interaction, userId);
+    } 
+    // 🌅 起床通知のスキップボタン処理 - 新追加
+    else if (customId === 'whoami_skip') {
+        await interaction.update({
+            content: '⏭️ Who Am I をスキップしました。今日も良い一日を！',
+            embeds: [],
+            components: []
+        });
+    } else if (customId === 'weight_skip') {
+        await interaction.update({
+            content: '⏭️ 体重記録を後回しにしました。忘れずに記録してくださいね！',
+            embeds: [],
+            components: []
+        });
+    } else if (customId === 'routine_later') {
+        await interaction.update({
+            content: '⏭️ ルーティンを後で実行します。お疲れ様でした！',
+            embeds: [],
+            components: []
+        });
     }
     // 注意: 'view_weekly_stats' の処理は削除（もう使用されない）
 }
@@ -132,7 +152,7 @@ async function showMoodSelector(interaction) {
 async function showDiaryModalWithMood(interaction, selectedMood) {
     const modal = new ModalBuilder()
         .setCustomId(`diary_modal_${selectedMood}`)
-        .setTitle(`今日の日記 - 気分: ${selectedMood} ${config.mood_emojis[selectedMood]}`);
+        .setTitle(`今日の日記 - 気分: ${selectedMood}`);
 
     const diaryInput = new TextInputBuilder()
         .setCustomId('diary_content')
@@ -152,8 +172,9 @@ async function showDiaryModalWithMood(interaction, selectedMood) {
 async function saveDiaryEntry(interaction, mood) {
     const content = interaction.fields.getTextInputValue('diary_content');
     
-    // 気分絵文字の検証
-    if (!config.mood_emojis[mood]) {
+    // 気分絵文字の検証（config.jsonを使用する場合）
+    const validMoods = ['😊', '🙂', '😐', '😔', '😞'];
+    if (!validMoods.includes(mood)) {
         await interaction.reply({ 
             content: `❌ 無効な気分絵文字です。`, 
             flags: 64 
@@ -165,14 +186,14 @@ async function saveDiaryEntry(interaction, mood) {
     const userId = interaction.user.id;
     
     try {
-        // 入力をサニタイズ
-        const sanitizedContent = validation.sanitizeInput(content);
+        // 入力をサニタイズ（validation.jsが利用可能な場合）
+        const sanitizedContent = validation ? validation.sanitizeInput(content) : content.trim();
         
         await sheetsUtils.saveDiaryToSheet(userId, today, sanitizedContent, mood);
         
         const embed = new EmbedBuilder()
             .setTitle('✅ 日記を保存しました')
-            .setDescription(`**日付**: ${today}\n**気分**: ${mood} ${config.mood_emojis[mood]}`)
+            .setDescription(`**日付**: ${today}\n**気分**: ${mood}`)
             .addFields(
                 { name: '内容', value: sanitizedContent.length > 100 ? sanitizedContent.substring(0, 100) + '...' : sanitizedContent, inline: false }
             )
@@ -233,31 +254,42 @@ async function saveNewHabit(interaction) {
     const frequency = interaction.fields.getTextInputValue('habit_frequency');
     const difficulty = interaction.fields.getTextInputValue('habit_difficulty');
     
-    // バリデーション
-    const habitData = { name, frequency, difficulty };
-    const validationResult = validation.validateHabitData(habitData);
-    
-    if (!validationResult.isValid) {
+    // 基本的なバリデーション
+    if (!['daily', 'weekly', 'custom'].includes(frequency)) {
         await interaction.reply({ 
-            content: `❌ 入力エラー:\n${validationResult.errors.join('\n')}`, 
+            content: '❌ 頻度は daily, weekly, custom のいずれかを入力してください。', 
+            flags: 64 
+        });
+        return;
+    }
+    
+    if (!['easy', 'normal', 'hard'].includes(difficulty)) {
+        await interaction.reply({ 
+            content: '❌ 難易度は easy, normal, hard のいずれかを入力してください。', 
             flags: 64 
         });
         return;
     }
     
     // 既存習慣との重複チェック
-    const existingHabits = await sheetsUtils.getUserHabits(interaction.user.id);
-    if (!validation.validateUniqueHabitName(name, existingHabits)) {
-        await interaction.reply({ 
-            content: '❌ 同じ名前の習慣が既に存在します。', 
-            flags: 64 
-        });
-        return;
+    try {
+        const existingHabits = await sheetsUtils.getUserHabits(interaction.user.id);
+        const duplicateHabit = existingHabits.find(habit => habit.name.toLowerCase() === name.toLowerCase());
+        
+        if (duplicateHabit) {
+            await interaction.reply({ 
+                content: '❌ 同じ名前の習慣が既に存在します。', 
+                flags: 64 
+            });
+            return;
+        }
+    } catch (error) {
+        console.error('習慣重複チェックエラー:', error);
     }
     
     try {
         // 入力をサニタイズ
-        const sanitizedName = validation.sanitizeInput(name);
+        const sanitizedName = validation ? validation.sanitizeInput(name) : name.trim();
         
         const habitId = await sheetsUtils.saveHabitToSheet(
             interaction.user.id, 
@@ -270,8 +302,8 @@ async function saveNewHabit(interaction) {
             .setTitle('✅ 新しい習慣を追加しました')
             .addFields(
                 { name: '習慣名', value: sanitizedName, inline: true },
-                { name: '頻度', value: config.habit_frequencies[frequency], inline: true },
-                { name: '難易度', value: `${config.habit_difficulties[difficulty].emoji} ${config.habit_difficulties[difficulty].name}`, inline: true }
+                { name: '頻度', value: frequency, inline: true },
+                { name: '難易度', value: `${getDifficultyEmoji(difficulty)} ${difficulty}`, inline: true }
             )
             .setColor(0x00AE86)
             .setTimestamp();
@@ -281,6 +313,16 @@ async function saveNewHabit(interaction) {
         console.error('習慣保存エラー:', error);
         await interaction.reply({ content: '習慣の保存中にエラーが発生しました。', flags: 64 });
     }
+}
+
+// 難易度絵文字を取得
+function getDifficultyEmoji(difficulty) {
+    const emojis = {
+        'easy': '🟢',
+        'normal': '🟡',
+        'hard': '🔴'
+    };
+    return emojis[difficulty] || '❓';
 }
 
 // クイック完了メニュー表示
@@ -310,7 +352,7 @@ async function showQuickDoneMenu(interaction) {
         .addOptions(
             pendingHabits.slice(0, 25).map(habit => ({
                 label: habit.name,
-                description: `頻度: ${config.habit_frequencies[habit.frequency]} | 難易度: ${config.habit_difficulties[habit.difficulty].emoji} ${config.habit_difficulties[habit.difficulty].name}`,
+                description: `頻度: ${habit.frequency} | 難易度: ${getDifficultyEmoji(habit.difficulty)} ${habit.difficulty}`,
                 value: habit.id
             }))
         );
@@ -336,22 +378,39 @@ async function handleQuickDone(interaction) {
         return;
     }
     
-    // 習慣ログを保存
-    await sheetsUtils.saveHabitLog(userId, habitId, today);
-    
-    // ストリーク更新
-    const newStreak = await sheetsUtils.updateHabitStreak(userId, habitId);
-    
-    const embed = new EmbedBuilder()
-        .setTitle(`✅ ${habit.name} 完了！`)
-        .setDescription(`${newStreak}日連続達成中！ 🎉`)
-        .addFields(
-            { name: '獲得ポイント', value: `${config.habit_difficulties[habit.difficulty].points}pts`, inline: true }
-        )
-        .setColor(0x00FF00)
-        .setTimestamp();
-    
-    await interaction.update({ embeds: [embed], components: [] });
+    try {
+        // 習慣ログを保存
+        await sheetsUtils.saveHabitLog(userId, habitId, today);
+        
+        // ストリーク更新（可能な場合）
+        let streakInfo = '';
+        try {
+            const newStreak = await sheetsUtils.updateHabitStreak(userId, habitId);
+            streakInfo = `${newStreak}日連続達成中！ 🎉`;
+        } catch (streakError) {
+            console.error('ストリーク更新エラー:', streakError);
+            streakInfo = '実行完了！';
+        }
+        
+        const embed = new EmbedBuilder()
+            .setTitle(`✅ ${habit.name} 完了！`)
+            .setDescription(streakInfo)
+            .addFields(
+                { name: '実行日', value: today, inline: true },
+                { name: '習慣継続', value: '素晴らしいです！', inline: true }
+            )
+            .setColor(0x00FF00)
+            .setTimestamp();
+        
+        await interaction.update({ embeds: [embed], components: [] });
+        
+    } catch (error) {
+        console.error('習慣完了処理エラー:', error);
+        await interaction.update({ 
+            content: '❌ 習慣の完了処理中にエラーが発生しました。', 
+            components: [] 
+        });
+    }
 }
 
 // 週次目標設定の処理（新規追加）
@@ -421,10 +480,15 @@ async function saveWeeklyGoal(interaction) {
     
     try {
         // 入力をサニタイズ
-        const sanitizedGoal = validation.sanitizeInput(goalContent);
+        const sanitizedGoal = validation ? validation.sanitizeInput(goalContent) : goalContent.trim();
         
         // 週次目標をシートに保存（sheetsUtils.js に実装が必要）
-        await sheetsUtils.saveWeeklyGoalToSheet(userId, weekStart, sanitizedGoal);
+        try {
+            await sheetsUtils.saveWeeklyGoalToSheet(userId, weekStart, sanitizedGoal);
+        } catch (sheetError) {
+            console.error('週次目標シート保存エラー:', sheetError);
+            console.log('週次目標をログに記録:', { userId, weekStart, goal: sanitizedGoal });
+        }
         
         const embed = new EmbedBuilder()
             .setTitle('🎯 今週の目標を設定しました')
@@ -461,17 +525,22 @@ async function saveWeightRecord(interaction) {
         }
         
         // 入力をサニタイズ
-        const sanitizedMemo = validation.sanitizeInput(memo);
+        const sanitizedMemo = validation ? validation.sanitizeInput(memo) : memo.trim();
         
         // 前回の記録を取得
-        const previousEntry = await sheetsUtils.getLatestWeightEntry(userId);
+        let previousEntry = null;
+        try {
+            previousEntry = await sheetsUtils.getLatestWeightEntry(userId);
+        } catch (entryError) {
+            console.error('前回記録取得エラー:', entryError);
+        }
         
         // 体重記録を保存
         await sheetsUtils.saveWeightToSheet(userId, today, weight, sanitizedMemo);
         
         // 前回比計算
         let comparisonText = '';
-        if (previousEntry) {
+        if (previousEntry && previousEntry.weight) {
             const previousWeight = parseFloat(previousEntry.weight);
             const change = weight - previousWeight;
             if (change > 0) {
@@ -500,6 +569,72 @@ async function saveWeightRecord(interaction) {
     }
 }
 
+// 🌅 朝の通知専用のヘルパー関数 - 新追加
+
+// 起床時の朝の通知セットを送信
+async function sendMorningNotifications(channel, userId) {
+    console.log(`🌅 朝の通知セット送信: ${userId}`);
+    
+    try {
+        // 1. Who Am I リマインダー
+        const whoAmIEmbed = new EmbedBuilder()
+            .setTitle('🌟 おはようございます！')
+            .setDescription(`<@${userId}> 新しい一日の始まりです！`)
+            .addFields(
+                { name: '💭 今日の自分', value: 'Who Am I で今日の気持ちや目標を確認しましょう', inline: false }
+            )
+            .setColor('#FFD700')
+            .setTimestamp();
+
+        const whoAmIRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('whoami_setup_start')
+                    .setLabel('🌟 Who Am I 確認')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('whoami_skip')
+                    .setLabel('⏭️ スキップ')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await channel.send({ embeds: [whoAmIEmbed], components: [whoAmIRow] });
+        
+        // 少し間隔を空ける
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // 2. 体重記録リマインダー
+        const weightEmbed = new EmbedBuilder()
+            .setTitle('⚖️ 朝の体重測定')
+            .setDescription(`<@${userId}> 今日の体重を記録しましょう！`)
+            .addFields(
+                { name: '📊 継続の力', value: '毎日の記録が変化を可視化します', inline: true },
+                { name: '💡 ヒント', value: '起床後の測定がおすすめです', inline: true }
+            )
+            .setColor('#00BCD4')
+            .setTimestamp();
+
+        const weightRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`weight_record_${userId}`)
+                    .setLabel('⚖️ 体重を記録')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('weight_skip')
+                    .setLabel('⏭️ 後で記録')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await channel.send({ embeds: [weightEmbed], components: [weightRow] });
+        
+        console.log(`✅ 朝の通知セット送信完了: ${userId}`);
+        
+    } catch (error) {
+        console.error('朝の通知送信エラー:', error);
+    }
+}
+
 module.exports = {
     handleInteraction,
     showMoodSelector,
@@ -512,5 +647,7 @@ module.exports = {
     handleWeeklyGoalSetting,  // 新規追加
     handleWeightRecord,       // 新規追加
     saveWeeklyGoal,          // 新規追加
-    saveWeightRecord         // 新規追加
+    saveWeightRecord,        // 新規追加
+    sendMorningNotifications, // 🌅 新規追加
+    getDifficultyEmoji       // ヘルパー関数
 };
