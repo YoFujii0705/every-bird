@@ -758,7 +758,7 @@ function generateEnhancedWeightGraph(entries, targetWeight = null) {
     return graph;
 }
 
-// calculations.js の getChangeFromFirst 関数（デバッグ版）
+// calculations.js の getChangeFromFirst 関数（改善版）
 async function getChangeFromFirst(userId) {
     console.log('🔍 getChangeFromFirst 開始:', { userId: userId.substring(0, 6) + '...' });
     
@@ -766,35 +766,39 @@ async function getChangeFromFirst(userId) {
         // 最初のエントリーを取得
         console.log('📊 最初の体重エントリーを取得中...');
         const firstEntry = await sheetsUtils.getFirstWeightEntry(userId);
-        console.log('📊 最初のエントリー:', firstEntry);
         
         // 最新のエントリーを取得
         console.log('📊 最新の体重エントリーを取得中...');
         const latestEntry = await sheetsUtils.getLatestWeightEntry(userId);
-        console.log('📊 最新のエントリー:', latestEntry);
+        
+        console.log('📊 取得したエントリー:', {
+            firstEntry: firstEntry ? {
+                date: firstEntry.date,
+                weight: firstEntry.weight,
+                type: typeof firstEntry.weight
+            } : null,
+            latestEntry: latestEntry ? {
+                date: latestEntry.date,
+                weight: latestEntry.weight,
+                type: typeof latestEntry.weight
+            } : null
+        });
         
         if (!firstEntry) {
-            console.log('❌ 最初のエントリーがnullまたは未定義');
+            console.log('❌ 最初のエントリーがありません');
             return null;
         }
         
         if (!latestEntry) {
-            console.log('❌ 最新のエントリーがnullまたは未定義');
+            console.log('❌ 最新のエントリーがありません');
             return null;
         }
         
-        console.log('🔍 エントリー詳細比較:', {
-            firstEntry: {
-                date: firstEntry.date,
-                weight: firstEntry.weight,
-                type: typeof firstEntry.weight
-            },
-            latestEntry: {
-                date: latestEntry.date,
-                weight: latestEntry.weight,
-                type: typeof latestEntry.weight
-            }
-        });
+        // 最初と最新が同じ日付の場合（初回記録）
+        if (firstEntry.date === latestEntry.date) {
+            console.log('ℹ️ 初回記録のため、開始時比較をスキップ');
+            return null;
+        }
         
         const firstWeight = parseFloat(firstEntry.weight);
         const latestWeight = parseFloat(latestEntry.weight);
@@ -802,12 +806,12 @@ async function getChangeFromFirst(userId) {
         console.log('🔢 重量の数値変換:', {
             firstWeight,
             latestWeight,
-            firstWeightIsNaN: isNaN(firstWeight),
-            latestWeightIsNaN: isNaN(latestWeight)
+            firstWeightIsValid: !isNaN(firstWeight) && firstWeight > 0,
+            latestWeightIsValid: !isNaN(latestWeight) && latestWeight > 0
         });
         
-        if (isNaN(firstWeight) || isNaN(latestWeight)) {
-            console.log('❌ 重量データが数値に変換できません');
+        if (isNaN(firstWeight) || isNaN(latestWeight) || firstWeight <= 0 || latestWeight <= 0) {
+            console.log('❌ 重量データが無効です');
             return null;
         }
         
@@ -815,14 +819,20 @@ async function getChangeFromFirst(userId) {
         const startDate = moment(firstEntry.date).format('YYYY/MM/DD');
         const daysSinceStart = moment().diff(moment(firstEntry.date), 'days');
         
+        // 変化が非常に小さい場合（0.05kg未満）は「変化なし」とする
+        const isSignificantChange = Math.abs(change) >= 0.05;
+        
         const result = {
             change: change.toFixed(1),
-            changeText: change >= 0 ? `+${change.toFixed(1)}kg` : `${change.toFixed(1)}kg`,
+            changeText: isSignificantChange ? 
+                (change >= 0 ? `+${change.toFixed(1)}kg` : `${change.toFixed(1)}kg`) : 
+                '変化なし',
             startDate,
             daysSinceStart,
             firstWeight: firstWeight.toFixed(1),
             latestWeight: latestWeight.toFixed(1),
-            direction: change > 0 ? '↗️' : change < 0 ? '↘️' : '➡️'
+            direction: change > 0.05 ? '↗️' : change < -0.05 ? '↘️' : '➡️',
+            isSignificantChange
         };
         
         console.log('✅ getChangeFromFirst 結果:', result);
@@ -830,10 +840,14 @@ async function getChangeFromFirst(userId) {
         
     } catch (error) {
         console.error('❌ getChangeFromFirst エラー:', error);
-        console.error('❌ エラースタック:', error.stack);
+        console.error('❌ エラーメッセージ:', error.message);
+        if (error.stack) {
+            console.error('❌ エラースタック:', error.stack);
+        }
         return null;
     }
 }
+
 module.exports = {
     // 気分関連
     calculateAverageMood,
