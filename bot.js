@@ -216,7 +216,7 @@ try {
     console.log('🤖 Botが正常に起動しました！');
 });
 
-// ===== インタラクション処理（修正版・重複削除） =====
+// ===== インタラクション処理（修正版・defer問題解決） =====
 client.on(Events.InteractionCreate, async interaction => {
     try {
         if (interaction.isChatInputCommand()) {
@@ -252,14 +252,16 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log('🔍 ボタンが押されました:', customId);
             console.log('🔍 ユーザーID:', interaction.user.id);
             
-            // ⭐ 最初に必ずdeferを実行（3秒ルール対策）
+            // ⭐ defer処理を調整（ルーティン以外のみ）
             try {
                 if (!interaction.deferred && !interaction.replied) {
-                    // updateかreplyかは処理内容によって決める
-                    if (customId.includes('quick_done') || customId.includes('snooze')) {
-                        await interaction.deferUpdate(); // メッセージを更新する場合
+                    // ルーティンボタンの場合はroutineHandlerに委譲（deferしない）
+                    if (customId.startsWith('routine_')) {
+                        // routineHandlerでdeferするのでここでは何もしない
+                    } else if (customId.includes('quick_done') || customId.includes('snooze')) {
+                        await interaction.deferUpdate();
                     } else {
-                        await interaction.deferReply({ ephemeral: true }); // 新しい返信の場合
+                        await interaction.deferReply({ flags: 64 }); // ephemeral の代わりに flags を使用
                     }
                 }
             } catch (deferError) {
@@ -268,6 +270,55 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             
             try {
+                // ルーティン関連のボタン処理を最初にチェック
+                if (customId.startsWith('routine_') || 
+                    ['routine_next', 'routine_skip', 'routine_pause', 'routine_stop'].includes(customId)) {
+                    
+                    console.log('🔄 ルーティンボタンを検出:', customId);
+                    
+                    if (routineHandler) {
+                        console.log('✅ ルーティンハンドラーに処理を委譲');
+                        
+                        try {
+                            // routineHandlerで完全に処理（bot.jsではdeferしない）
+                            await routineHandler.handleButtonInteraction(interaction);
+                            console.log('✅ ルーティンボタン処理完了');
+                            return;
+                        } catch (routineError) {
+                            console.error('❌ ルーティンボタン処理エラー:', routineError);
+                            
+                            // エラーが発生した場合の応答
+                            try {
+                                if (!interaction.replied && !interaction.deferred) {
+                                    await interaction.reply({
+                                        content: '❌ ルーティン操作中にエラーが発生しました。',
+                                        flags: 64
+                                    });
+                                } else if (interaction.deferred) {
+                                    await interaction.editReply({
+                                        content: '❌ ルーティン操作中にエラーが発生しました。',
+                                        components: []
+                                    });
+                                }
+                            } catch (replyError) {
+                                console.error('エラーメッセージ送信失敗:', replyError);
+                            }
+                            return;
+                        }
+                    } else {
+                        console.log('❌ ルーティンハンドラーが見つかりません');
+                        try {
+                            await interaction.reply({
+                                content: '❌ ルーティンハンドラーが初期化されていません。',
+                                flags: 64
+                            });
+                        } catch (replyError) {
+                            console.error('エラーメッセージ送信失敗:', replyError);
+                        }
+                        return;
+                    }
+                }
+
                 // 🔔 Habit通知関連のボタン処理
                 if (customId.startsWith('habit_quick_done_') || 
                     customId.startsWith('habit_snooze_') ||
@@ -296,58 +347,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     await whoamiCommands.handleButtonInteraction(interaction);
                     return;
                 }
-
-                // 緊急修正: ルーティンボタン処理（bot.js内）
-if (customId.startsWith('routine_') || 
-    ['routine_next', 'routine_skip', 'routine_pause', 'routine_stop'].includes(customId)) {
-    
-    console.log('🔄 ルーティンボタンを検出:', customId);
-    
-    try {
-        // まず簡単なテスト応答
-        if (customId === 'routine_start_1') {
-            await interaction.editReply({
-                content: '🧪 テスト: ルーティン開始ボタンが押されました！',
-                components: []
-            });
-            return;
-        }
-        
-        // 他のルーティンボタンの場合
-        if (routineHandler) {
-            console.log('✅ ルーティンハンドラーに処理を委譲');
-            
-            // タイムアウト対策
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('処理タイムアウト')), 2000);
-            });
-            
-            await Promise.race([
-                routineHandler.handleButtonInteraction(interaction),
-                timeoutPromise
-            ]);
-            
-            console.log('✅ ルーティンボタン処理完了');
-        } else {
-            console.log('❌ ルーティンハンドラーが見つかりません');
-            await interaction.editReply({
-                content: '❌ ルーティンハンドラーが初期化されていません。'
-            });
-        }
-    } catch (error) {
-        console.error('❌ ルーティンボタン処理エラー:', error);
-        
-        try {
-            await interaction.editReply({
-                content: `❌ ルーティン処理エラー: ${error.message}`,
-                components: []
-            });
-        } catch (replyError) {
-            console.error('エラーメッセージ送信失敗:', replyError);
-        }
-    }
-    return;
-}
                 
                 // 🎯 統合目標ダッシュボードのボタン処理
                 if (customId === 'goals_dashboard') {
@@ -406,7 +405,7 @@ if (customId.startsWith('routine_') ||
                             } else if (!interaction.replied) {
                                 await interaction.reply({ 
                                     content: '❌ カレンダーの表示中にエラーが発生しました。', 
-                                    ephemeral: true 
+                                    flags: 64
                                 });
                             }
                         } catch (replyError) {
@@ -514,12 +513,13 @@ if (customId.startsWith('routine_') ||
                 try {
                     if (interaction.deferred) {
                         await interaction.editReply({ 
-                            content: 'ボタン処理中にエラーが発生しました。'
+                            content: 'ボタン処理中にエラーが発生しました。',
+                            components: []
                         });
                     } else if (!interaction.replied) {
                         await interaction.reply({ 
                             content: 'ボタン処理中にエラーが発生しました。', 
-                            ephemeral: true 
+                            flags: 64
                         });
                     }
                 } catch (replyError) {
@@ -557,7 +557,7 @@ if (customId.startsWith('routine_') ||
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ 
                         content: 'セレクトメニュー処理中にエラーが発生しました。', 
-                        ephemeral: true 
+                        flags: 64
                     });
                 }
             }
@@ -607,7 +607,7 @@ if (customId.startsWith('routine_') ||
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ 
                         content: 'モーダル処理中にエラーが発生しました。', 
-                        ephemeral: true 
+                        flags: 64
                     });
                 }
             }
@@ -621,12 +621,11 @@ if (customId.startsWith('routine_') ||
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ 
                 content: 'エラーが発生しました。しばらく後にもう一度お試しください。', 
-                ephemeral: true 
+                flags: 64
             });
         }
     }
 });
-
 // ===== 🎯 統合目標ダッシュボード用のヘルパー関数 =====
 
 // 目標カレンダー表示（update版）
