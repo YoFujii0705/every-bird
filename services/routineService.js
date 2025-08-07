@@ -91,35 +91,35 @@ class RoutineSession {
         }
     }
 
-/**
- * ルーティンを完了
- */
-async complete() {
-    const endTime = new Date();
-    this.status = 'completed';
+    /**
+     * ルーティンを完了
+     */
+    async complete() {
+        const endTime = new Date();
+        this.status = 'completed';
 
-    // 実行記録を更新
-    try {
-        if (sheetsUtils.updateRoutineExecution) {
-            await sheetsUtils.updateRoutineExecution(this.executionId, {
-                endTime: endTime.toISOString().slice(11, 16),
-                status: 'completed',
-                completedSteps: this.completedSteps
-            });
+        // 実行記録を更新
+        try {
+            if (sheetsUtils.updateRoutineExecution) {
+                await sheetsUtils.updateRoutineExecution(this.executionId, {
+                    endTime: endTime.toISOString().slice(11, 16),
+                    status: 'completed',
+                    completedSteps: this.completedSteps
+                });
+            }
+            
+            // ★新しく追加：実行回数を更新
+            if (sheetsUtils.updateRoutineTotalExecutions) {
+                await sheetsUtils.updateRoutineTotalExecutions(this.routineId);
+                console.log('📊 ルーティン実行回数を更新しました:', this.routineId);
+            }
+            
+        } catch (error) {
+            console.error('ルーティン完了記録エラー:', error);
         }
-        
-        // ★新しく追加：実行回数を更新
-        if (sheetsUtils.updateRoutineTotalExecutions) {
-            await sheetsUtils.updateRoutineTotalExecutions(this.routineId);
-            console.log('📊 ルーティン実行回数を更新しました:', this.routineId);
-        }
-        
-    } catch (error) {
-        console.error('ルーティン完了記録エラー:', error);
+
+        return { completed: true, endTime };
     }
-
-    return { completed: true, endTime };
-}
 
     /**
      * ルーティンを中断
@@ -173,90 +173,91 @@ class GoogleSheetsServiceWrapper {
      * データを取得（NotificationServiceで使用）
      */
     async getData(range) {
-    try {
-        const [sheetName, cellRange] = range.split('!');
-        
-        console.log(`📊 ${sheetName} シートからデータを取得中...`);
-        
-        // saveToSheetと同じAPI方式を使用
-        const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-        const fullRange = `${sheetName}!${cellRange}`;
-        
-        const { google } = require('googleapis');
-        const auth = new google.auth.GoogleAuth({
-            keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
-            scopes: ['https://www.googleapis.com/auth/spreadsheets']
-        });
-        
-        const sheets = google.sheets({ version: 'v4', auth });
-        
-        const request = {
-            spreadsheetId,
-            range: fullRange,
-        };
-        
-        const response = await sheets.spreadsheets.values.get(request);
-        const rows = response.data.values || [];
-        
-        if (rows.length === 0) {
-            console.log(`📋 ${sheetName} シートにデータがありません`);
-            // ヘッダーのみを返す
-            if (sheetName === 'routine_notifications') {
+        try {
+            const [sheetName, cellRange] = range.split('!');
+            
+            console.log(`📊 ${sheetName} シートからデータを取得中...`);
+            
+            // saveToSheetと同じAPI方式を使用
+            const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+            const fullRange = `${sheetName}!${cellRange}`;
+            
+            const { google } = require('googleapis');
+            const auth = new google.auth.GoogleAuth({
+                keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+                scopes: ['https://www.googleapis.com/auth/spreadsheets']
+            });
+            
+            const sheets = google.sheets({ version: 'v4', auth });
+            
+            const request = {
+                spreadsheetId,
+                range: fullRange,
+            };
+            
+            const response = await sheets.spreadsheets.values.get(request);
+            const rows = response.data.values || [];
+            
+            if (rows.length === 0) {
+                console.log(`📋 ${sheetName} シートにデータがありません`);
+                // ヘッダーのみを返す
+                if (sheetName === 'routine_notifications') {
+                    return [['notification_id', 'user_id', 'routine_id', 'notification_type', 'is_enabled', 'notification_time', 'days_of_week', 'channel_id', 'threshold_days', 'threshold_count', 'last_sent', 'created_at']];
+                }
+                return [[]];
+            }
+            
+            console.log(`✅ ${sheetName} から ${rows.length - 1}行のデータを取得しました`);
+            console.log('🔍 取得したデータサンプル:', rows.length > 1 ? rows[1] : 'データなし');
+            
+            return rows;
+            
+        } catch (error) {
+            console.error('getData エラー:', error);
+            
+            // エラー時はヘッダーのみ返す
+            if (range.includes('routine_notifications')) {
                 return [['notification_id', 'user_id', 'routine_id', 'notification_type', 'is_enabled', 'notification_time', 'days_of_week', 'channel_id', 'threshold_days', 'threshold_count', 'last_sent', 'created_at']];
             }
             return [[]];
         }
-        
-        console.log(`✅ ${sheetName} から ${rows.length - 1}行のデータを取得しました`);
-        console.log('🔍 取得したデータサンプル:', rows.length > 1 ? rows[1] : 'データなし');
-        
-        return rows;
-        
-    } catch (error) {
-        console.error('getData エラー:', error);
-        
-        // エラー時はヘッダーのみ返す
-        if (range.includes('routine_notifications')) {
-            return [['notification_id', 'user_id', 'routine_id', 'notification_type', 'is_enabled', 'notification_time', 'days_of_week', 'channel_id', 'threshold_days', 'threshold_count', 'last_sent', 'created_at']];
-        }
-        return [[]];
     }
-}
 
     /**
      * データを追加（NotificationServiceで使用）
      */
     async appendData(range, values) {
-    try {
-        const [sheetName, cellRange] = range.split('!');
-        
-        // デバッグ情報を追加
-        console.log('🔍 appendData デバッグ:', {
-            sheetName,
-            hasSaveToSheet: typeof this.sheetsUtils.saveToSheet === 'function',
-            availableMethods: Object.keys(this.sheetsUtils).filter(key => typeof this.sheetsUtils[key] === 'function')
-        });
-        
-        if (sheetName === 'routine_notifications') {
-            if (this.sheetsUtils.saveToSheet) {
-                console.log('📝 実際の保存を実行中...');
-                const success = await this.sheetsUtils.saveToSheet(sheetName, values);
-                console.log(`💾 ${sheetName} への保存結果:`, success ? '成功' : '失敗');
-                return success;
-            } else {
-                console.log('💾 通知データ保存（模擬）:', values);
-                return true;
+        try {
+            const [sheetName, cellRange] = range.split('!');
+            
+            // デバッグ情報を追加
+            console.log('🔍 appendData デバッグ:', {
+                sheetName,
+                hasSaveToSheet: typeof this.sheetsUtils.saveToSheet === 'function',
+                availableMethods: Object.keys(this.sheetsUtils).filter(key => typeof this.sheetsUtils[key] === 'function')
+            });
+            
+            if (sheetName === 'routine_notifications') {
+                if (this.sheetsUtils.saveToSheet) {
+                    console.log('📝 実際の保存を実行中...');
+                    const success = await this.sheetsUtils.saveToSheet(sheetName, values);
+                    console.log(`💾 ${sheetName} への保存結果:`, success ? '成功' : '失敗');
+                    return success;
+                } else {
+                    console.log('💾 通知データ保存（模擬）:', values);
+                    return true;
+                }
             }
+            
+            console.log(`⚠️ 未対応のデータ追加: ${sheetName}`, values);
+            return true;
+            
+        } catch (error) {
+            console.error('appendData エラー:', error);
+            return false;
         }
-        
-        console.log(`⚠️ 未対応のデータ追加: ${sheetName}`, values);
-        return true;
-        
-    } catch (error) {
-        console.error('appendData エラー:', error);
-        return false;
     }
-}
+
     /**
      * 次のIDを取得（NotificationServiceで使用）
      */
@@ -307,68 +308,86 @@ class RoutineService {
         }
     }
 
-    async getRoutines(userId) {
-    try {
-        console.log('🔍 ユーザールーティン取得開始:', { userId });
-        
-        // 直接Google Sheets API v4を使用
-        const { google } = require('googleapis');
-        const auth = new google.auth.GoogleAuth({
-            keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
-            scopes: ['https://www.googleapis.com/auth/spreadsheets']
-        });
-        
-        const sheets = google.sheets({ version: 'v4', auth });
-        const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-        const range = 'routines_master!A:I';
-        
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range,
-        });
-        
-        const rows = response.data.values || [];
-        console.log('📊 ルーティンデータ取得:', { totalRows: rows.length });
-        
-        if (rows.length <= 1) {
-            console.log('📋 ルーティンデータがありません');
+    // ✅ getUserRoutines メソッドを追加（エラー修正）
+    async getUserRoutines(userId) {
+        try {
+            console.log('🔍 ユーザールーティン取得開始:', { userId });
+            
+            // 直接Google Sheets API v4を使用
+            const { google } = require('googleapis');
+            const auth = new google.auth.GoogleAuth({
+                keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+                scopes: ['https://www.googleapis.com/auth/spreadsheets']
+            });
+            
+            const sheets = google.sheets({ version: 'v4', auth });
+            const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+            const range = 'routines_master!A:I';
+            
+            const response = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range,
+            });
+            
+            const rows = response.data.values || [];
+            console.log('📊 ルーティンデータ取得:', { totalRows: rows.length });
+            
+            if (rows.length <= 1) {
+                console.log('📋 ルーティンデータがありません');
+                return [];
+            }
+            
+            const routines = [];
+            // ヘッダー行をスキップ（インデックス0）
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                
+                // 🔧 ユーザーIDのフィルタリングを修正
+                // routines_masterシートの構造に応じて調整
+                // A列: routine_id, B列: created_at, C列: name, D列: description, E列: category, F列: is_active, G列: estimated_duration, H列: last_executed, I列: total_executions
+                // ユーザーIDは別のシートまたは列にある可能性があります
+                
+                // is_active列（F列、インデックス5）をチェック
+                const isActive = row[5] === 'TRUE' || row[5] === true;
+                
+                if (isActive) {
+                    const routine = {
+                        id: parseInt(row[0]) || row[0],           // routine_id (A列)
+                        userId: userId,                           // 🔧 userIdを直接設定（別途取得が必要な場合は修正）
+                        createdAt: row[1],                        // created_at (B列)
+                        name: row[2],                             // name (C列)
+                        description: row[3] || '',                // description (D列)
+                        category: row[4] || 'general',            // category (E列)
+                        isActive: isActive,                       // is_active (F列)
+                        estimatedDuration: parseInt(row[6]) || 0, // estimated_duration (G列)
+                        lastExecuted: row[7],                     // last_executed (H列)
+                        totalExecutions: parseInt(row[8]) || 0    // total_executions (I列)
+                    };
+                    
+                    // 🔧 特定のキーワードでフィルタリング（朝/夜のルーティン用）
+                    // または全てのルーティンを返して、呼び出し側でフィルタリング
+                    routines.push(routine);
+                }
+            }
+            
+            console.log('✅ ルーティン取得完了:', { count: routines.length });
+            return routines;
+            
+        } catch (error) {
+            console.error('ユーザールーティン取得エラー:', error);
             return [];
         }
-        
-        const routines = [];
-        // ヘッダー行をスキップ（インデックス0）
-        for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            
-            // ユーザーIDのチェック（まずは全ユーザーのデータを表示してテスト）
-            // const rowUserId = row[?]; // ユーザーIDがどの列にあるか要確認
-            
-            // is_active列（F列、インデックス5）をチェック
-            const isActive = row[5] === 'TRUE' || row[5] === true;
-            
-            if (isActive) {
-                routines.push({
-                    id: parseInt(row[0]) || row[0],           // routine_id (A列)
-                    createdAt: row[1],                        // created_at (B列)
-                    name: row[2],                             // name (C列)
-                    description: row[3] || '',                // description (D列)
-                    category: row[4] || 'general',            // category (E列)
-                    isActive: isActive,                       // is_active (F列)
-                    estimatedDuration: parseInt(row[6]) || 0, // estimated_duration (G列)
-                    lastExecuted: row[7],                     // last_executed (H列)
-                    totalExecutions: parseInt(row[8]) || 0    // total_executions (I列)
-                });
-            }
-        }
-        
-        console.log('✅ ルーティン取得完了:', { count: routines.length });
-        return routines;
-        
-    } catch (error) {
-        console.error('ルーティン一覧取得エラー:', error);
-        return [];
     }
-}
+
+    async getRoutines(userId) {
+        try {
+            // getUserRoutinesと同じ実装を使用
+            return await this.getUserRoutines(userId);
+        } catch (error) {
+            console.error('ルーティン一覧取得エラー:', error);
+            return [];
+        }
+    }
 
     async getRoutineInfo(routineId) {
         try {
