@@ -2147,23 +2147,227 @@ async handleDebugSheets(interaction) {
 }
 
   /**
-   * ボタンインタラクションハンドラー
-   */
-// handlers/routineHandler.js のボタンハンドラー部分を修正
-
+ * ボタンインタラクションハンドラー（修正版）
+ */
 async handleButtonInteraction(interaction) {
     const customId = interaction.customId;
     const userId = interaction.user.id;
     
-    console.log('🔍 ボタンが押されました:', customId);
-    console.log('🔍 ユーザーID:', userId);
+    console.log('🔍 RoutineHandler: ボタンが押されました:', customId);
+    console.log('🔍 RoutineHandler: ユーザーID:', userId);
     
-    if (customId === 'routine_next') {
-        await this.handleButtonNext(interaction);
-    } else if (customId === 'routine_skip') {
-        await this.handleButtonSkip(interaction);
-    } else if (customId === 'routine_stop') {
-        await this.handleButtonStop(interaction);
+    try {
+        // 最初に必ずdeferUpdateを実行（3秒ルール対策）
+        if (!interaction.deferred && !interaction.replied) {
+            console.log('🔄 RoutineHandler: deferUpdate実行中...');
+            await interaction.deferUpdate();
+            console.log('✅ RoutineHandler: deferUpdate完了');
+        }
+
+        // ボタンIDによる分岐処理
+        if (customId.startsWith('routine_start_')) {
+            // ルーティン開始ボタン（例: routine_start_1）
+            const routineId = parseInt(customId.split('_')[2]);
+            console.log('🎯 ルーティン開始ボタン:', { routineId });
+            await this.startRoutineFromButton(interaction, routineId);
+            
+        } else if (customId.startsWith('routine_steps_')) {
+            // ステップ確認ボタン（例: routine_steps_1）
+            const routineId = parseInt(customId.split('_')[2]);
+            console.log('📝 ステップ確認ボタン:', { routineId });
+            await this.showStepsFromButton(interaction, routineId);
+            
+        } else if (customId.startsWith('routine_delete_confirm_')) {
+            // 削除確認ボタン（例: routine_delete_confirm_1）
+            const routineId = parseInt(customId.split('_')[3]);
+            console.log('🗑️ 削除確認ボタン:', { routineId });
+            await this.confirmDeleteRoutine(interaction, routineId);
+            
+        } else if (customId === 'routine_delete_cancel') {
+            // 削除キャンセルボタン
+            console.log('❌ 削除キャンセルボタン');
+            await interaction.editReply({
+                content: '削除をキャンセルしました。',
+                embeds: [],
+                components: []
+            });
+            
+        } else if (customId === 'routine_next') {
+            // 次のステップボタン
+            console.log('➡️ 次のステップボタン');
+            await this.handleButtonNext(interaction);
+            
+        } else if (customId === 'routine_skip') {
+            // ステップスキップボタン
+            console.log('⏩ ステップスキップボタン');
+            await this.handleButtonSkip(interaction);
+            
+        } else if (customId === 'routine_pause') {
+            // 一時停止ボタン
+            console.log('⏸️ 一時停止ボタン');
+            await this.handleButtonPause(interaction);
+            
+        } else if (customId === 'routine_stop') {
+            // 中断ボタン
+            console.log('⏹️ 中断ボタン');
+            await this.handleButtonStop(interaction);
+            
+        } else {
+            // 未知のボタンID
+            console.log('❓ 未知のルーティンボタン:', customId);
+            await interaction.editReply({
+                content: `❌ 未知のボタン操作です: ${customId}`,
+                components: []
+            });
+        }
+        
+        console.log('✅ RoutineHandler: ボタン処理完了');
+        
+    } catch (error) {
+        console.error('❌ RoutineHandler ボタン処理エラー:', error);
+        
+        try {
+            const errorMessage = '❌ ルーティンボタン処理でエラーが発生しました。';
+            
+            if (interaction.deferred) {
+                await interaction.editReply({
+                    content: errorMessage,
+                    embeds: [],
+                    components: []
+                });
+            } else if (!interaction.replied) {
+                await interaction.reply({
+                    content: errorMessage,
+                    flags: 64 // ephemeral
+                });
+            }
+        } catch (replyError) {
+            console.error('❌ RoutineHandler エラー応答送信失敗:', replyError);
+        }
+    }
+}
+
+  // startRoutineFromButton メソッドの修正版
+async startRoutineFromButton(interaction, routineId) {
+    const userId = interaction.user.id;
+    
+    console.log('🎯 ルーティン開始処理:', { userId: userId.substring(0, 6) + '...', routineId });
+
+    try {
+        // アクティブセッションチェック
+        if (this.activeSessions.has(userId)) {
+            console.log('⚠️ 既に実行中のルーティンがあります');
+            return await interaction.editReply({
+                content: '❌ 既に実行中のルーティンがあります。先に完了または中断してください。\n`/routine status` で確認できます。',
+                components: []
+            });
+        }
+
+        // ルーティン情報とステップを取得
+        const routineInfo = await this.routineService.getRoutineInfo(routineId);
+        if (!routineInfo) {
+            console.log('❌ ルーティンが見つかりません:', routineId);
+            return await interaction.editReply({
+                content: '❌ 指定されたIDのルーティンが見つかりません。',
+                components: []
+            });
+        }
+
+        const steps = await this.routineService.getRoutineSteps(routineId);
+        if (steps.length === 0) {
+            console.log('❌ ステップが見つかりません:', routineId);
+            return await interaction.editReply({
+                content: '❌ このルーティンにはステップが登録されていません。先にステップを追加してください。',
+                components: []
+            });
+        }
+
+        console.log('📊 ルーティン情報:', { name: routineInfo.name, stepsCount: steps.length });
+
+        // セッション開始
+        const session = await this.routineService.startRoutineSession(userId, routineId, routineInfo, steps);
+        this.activeSessions.set(userId, session);
+        
+        console.log('✅ セッション開始完了');
+        console.log('🔍 アクティブセッション数:', this.activeSessions.size);
+
+        // ステップ表示
+        const { embed, components } = this.createStepDisplay(session);
+        await interaction.editReply({ embeds: [embed], components });
+        
+        console.log('✅ ステップ表示完了');
+
+    } catch (error) {
+        console.error('❌ startRoutineFromButton エラー:', error);
+        
+        try {
+            await interaction.editReply({
+                content: '❌ ルーティンの開始に失敗しました。もう一度お試しください。',
+                components: []
+            });
+        } catch (replyError) {
+            console.error('❌ エラー応答送信失敗:', replyError);
+        }
+    }
+}
+
+  // showStepsFromButton メソッドの修正版
+async showStepsFromButton(interaction, routineId) {
+    console.log('📝 ステップ表示処理:', { routineId });
+
+    try {
+        const routineInfo = await this.routineService.getRoutineInfo(routineId);
+        if (!routineInfo) {
+            return await interaction.editReply({
+                content: '❌ ルーティンが見つかりません。',
+                components: []
+            });
+        }
+
+        const steps = await this.routineService.getRoutineSteps(routineId);
+
+        if (steps.length === 0) {
+            const embed = new EmbedBuilder()
+                .setTitle(`📝 ${routineInfo.name} - ステップ一覧`)
+                .setDescription('まだステップが登録されていません。\n`/routine add-step` でステップを追加しましょう！')
+                .setColor('#FFC107');
+
+            return await interaction.editReply({ embeds: [embed], components: [] });
+        }
+
+        const stepList = steps.map(step => {
+            const timeText = step.estimatedMinutes > 0 ? `(${step.estimatedMinutes}分)` : '';
+            const requiredText = step.isRequired ? '🔴' : '🔵';
+            return `${requiredText} **${step.order}.** ${step.name} ${timeText}`;
+        }).join('\n');
+
+        const totalTime = steps.reduce((sum, step) => sum + step.estimatedMinutes, 0);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`📝 ${routineInfo.name} - ステップ一覧`)
+            .setDescription(stepList)
+            .addFields(
+                { name: '⏱️ 総予想時間', value: `${totalTime}分`, inline: true },
+                { name: '🔢 ステップ数', value: steps.length.toString(), inline: true }
+            )
+            .setFooter({ text: '🔴=必須 🔵=任意' })
+            .setColor('#2196F3');
+
+        await interaction.editReply({ embeds: [embed], components: [] });
+        
+        console.log('✅ ステップ表示完了');
+
+    } catch (error) {
+        console.error('❌ showStepsFromButton エラー:', error);
+        
+        try {
+            await interaction.editReply({
+                content: '❌ ステップ情報の取得に失敗しました。',
+                components: []
+            });
+        } catch (replyError) {
+            console.error('❌ エラー応答送信失敗:', replyError);
+        }
     }
 }
 
