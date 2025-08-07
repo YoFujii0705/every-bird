@@ -3167,7 +3167,7 @@ async function saveHabitLog(userId, habitId, date, notes = '') {
     }
 }
 
-// module.exports の更新
+// sheets.js の module.exports セクション（修正版）
 module.exports = {
     // 日記関連
     saveDiaryToSheet,
@@ -3180,6 +3180,7 @@ module.exports = {
     getWeightEntriesInRange,
     getLastWeightEntry,
     getLatestWeightEntry,
+    getFirstWeightEntry,  // ← この行を追加/確認
     saveWeightGoal,
     getWeightGoal,
     getRoutineExecutionsInRange,
@@ -3196,19 +3197,21 @@ module.exports = {
     getHabitByName,
     saveHabitLog,
     getHabitLogForDate,
-    getHabitLogsForDate,  // ← この行を追加
+    getHabitLogsForDate,
     getHabitLogsInRange,
     getHabitLogs,
     updateHabit,
     updateHabitStreak,
     deleteHabit,
-// 日記目標関連（新規追加）
+    
+    // 日記目標関連
     saveDiaryGoal,
     getDiaryGoals,
     getDiaryGoalsByType,
     getDiaryStatsInRange,
     calculateDiaryGoalProgress,
- // ルーティン関連（新規追加）
+    
+    // ルーティン関連
     saveRoutineToSheet,
     getUserRoutines,
     getRoutineById,
@@ -3231,23 +3234,18 @@ module.exports = {
     getNextId,
     updateRoutineTotalExecutions,
 
-// 新しい関数
-    getFirstWeightEntry,
-    getLatestWeightEntry,
+    // 食事記録関連
     saveMealRecord,
     getMealRecordsForDate,
     getMealRecordsInRange,
     initializeMealLogsSheet,
 
-// 🌟 Who Am I 関数（新規追加）
+    // Who Am I 関連
     getWhoAmIData,
     saveWhoAmIData,
     initializeWhoAmISheet,
     deleteWhoAmIData,
-// リンク用
-getHabitByName,
-getHabitLogsForDate,
-saveHabitLog, 
-   // テスト用
+    
+    // テスト用
     testConnection: async () => ({ success: true })
 };
