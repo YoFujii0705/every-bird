@@ -758,23 +758,64 @@ function generateEnhancedWeightGraph(entries, targetWeight = null) {
     return graph;
 }
 
-// 初回記録からの変化を取得する関数
+// calculations.js の getChangeFromFirst 関数（デバッグ版）
 async function getChangeFromFirst(userId) {
+    console.log('🔍 getChangeFromFirst 開始:', { userId: userId.substring(0, 6) + '...' });
+    
     try {
+        // 最初のエントリーを取得
+        console.log('📊 最初の体重エントリーを取得中...');
         const firstEntry = await sheetsUtils.getFirstWeightEntry(userId);
-        const latestEntry = await sheetsUtils.getLatestWeightEntry(userId);
+        console.log('📊 最初のエントリー:', firstEntry);
         
-        if (!firstEntry || !latestEntry) {
+        // 最新のエントリーを取得
+        console.log('📊 最新の体重エントリーを取得中...');
+        const latestEntry = await sheetsUtils.getLatestWeightEntry(userId);
+        console.log('📊 最新のエントリー:', latestEntry);
+        
+        if (!firstEntry) {
+            console.log('❌ 最初のエントリーがnullまたは未定義');
             return null;
         }
         
+        if (!latestEntry) {
+            console.log('❌ 最新のエントリーがnullまたは未定義');
+            return null;
+        }
+        
+        console.log('🔍 エントリー詳細比較:', {
+            firstEntry: {
+                date: firstEntry.date,
+                weight: firstEntry.weight,
+                type: typeof firstEntry.weight
+            },
+            latestEntry: {
+                date: latestEntry.date,
+                weight: latestEntry.weight,
+                type: typeof latestEntry.weight
+            }
+        });
+        
         const firstWeight = parseFloat(firstEntry.weight);
         const latestWeight = parseFloat(latestEntry.weight);
+        
+        console.log('🔢 重量の数値変換:', {
+            firstWeight,
+            latestWeight,
+            firstWeightIsNaN: isNaN(firstWeight),
+            latestWeightIsNaN: isNaN(latestWeight)
+        });
+        
+        if (isNaN(firstWeight) || isNaN(latestWeight)) {
+            console.log('❌ 重量データが数値に変換できません');
+            return null;
+        }
+        
         const change = latestWeight - firstWeight;
         const startDate = moment(firstEntry.date).format('YYYY/MM/DD');
         const daysSinceStart = moment().diff(moment(firstEntry.date), 'days');
         
-        return {
+        const result = {
             change: change.toFixed(1),
             changeText: change >= 0 ? `+${change.toFixed(1)}kg` : `${change.toFixed(1)}kg`,
             startDate,
@@ -783,12 +824,16 @@ async function getChangeFromFirst(userId) {
             latestWeight: latestWeight.toFixed(1),
             direction: change > 0 ? '↗️' : change < 0 ? '↘️' : '➡️'
         };
+        
+        console.log('✅ getChangeFromFirst 結果:', result);
+        return result;
+        
     } catch (error) {
-        console.error('初回からの変化計算エラー:', error);
+        console.error('❌ getChangeFromFirst エラー:', error);
+        console.error('❌ エラースタック:', error.stack);
         return null;
     }
 }
-
 module.exports = {
     // 気分関連
     calculateAverageMood,
