@@ -513,7 +513,89 @@ async function sendMorningNotificationSet(channel, userId) {
         delete global[sendingKey];
         console.log(`🔓 朝の通知セット送信フラグクリア: ${userId}`);
     }
-}// ===== Ready イベント =====
+}
+
+
+// 夜の通知セットを送信 🌙 新追加
+async function sendEveningNotificationSet(channel, userId) {
+    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+    
+    console.log(`🌙 夜の通知セット送信開始: ${userId}`);
+    
+    try {
+        if (routineHandler && routineHandler.routineService) {
+            let routines = [];
+            
+            // routineService のメソッドを安全に呼び出し
+            try {
+                if (typeof routineHandler.routineService.getUserRoutines === 'function') {
+                    routines = await routineHandler.routineService.getUserRoutines(userId);
+                } else if (typeof routineHandler.routineService.getRoutines === 'function') {
+                    const allRoutines = await routineHandler.routineService.getRoutines();
+                    routines = allRoutines.filter(r => r.userId === userId);
+                } else {
+                    // 直接シートから取得を試行
+                    const sheetsUtils = require('./utils/sheets');
+                    const routineData = await sheetsUtils.getSheetData('routines_master', 'A:Z');
+                    routines = routineData.slice(1).filter(row => row[1] === userId).map(row => ({
+                        id: row[0],
+                        userId: row[1],
+                        name: row[2],
+                        description: row[3] || ''
+                    }));
+                }
+            } catch (routineError) {
+                console.error('夜のルーティン取得エラー:', routineError);
+                routines = [];
+            }
+            
+            const eveningRoutines = routines.filter(r => 
+                r.name.toLowerCase().includes('夜') || 
+                r.name.toLowerCase().includes('夕方') || 
+                r.name.toLowerCase().includes('evening') ||
+                r.name.toLowerCase().includes('就寝') ||
+                r.name.toLowerCase().includes('寝る前')
+            );
+
+            if (eveningRoutines.length > 0) {
+                const routineEmbed = new EmbedBuilder()
+                    .setTitle('🌙 夜のルーティン')
+                    .setDescription(`<@${userId}> 今日一日お疲れ様でした！\n夜のルーティンを開始しますか？`)
+                    .addFields(
+                        { name: '📋 利用可能なルーティン', value: eveningRoutines.map(r => `• ${r.name}`).join('\n'), inline: false },
+                        { name: '😴 良い睡眠を', value: '明日に向けてゆっくり休みましょう', inline: false }
+                    )
+                    .setColor('#4A154B')
+                    .setTimestamp();
+
+                const routineRow = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`routine_start_${eveningRoutines[0].id}`)
+                            .setLabel('🎯 ルーティン開始')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('routine_later')
+                            .setLabel('⏭️ 後で実行')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                await channel.send({ embeds: [routineEmbed], components: [routineRow] });
+            } else {
+                console.log('📋 夜のルーティンが見つかりませんでした');
+            }
+        } else {
+            console.log('⚠️ routineHandlerまたはroutineServiceが初期化されていません');
+        }
+    } catch (routineError) {
+        console.error('夜のルーティンリマインダー送信エラー:', routineError);
+    }
+    
+    console.log(`✅ 夜の通知セット送信完了: ${userId}`);
+}
+
+
+// ===== Ready イベント =====
 client.once(Events.ClientReady, async readyClient => {
     console.log(`✅ ${readyClient.user.tag} がログインしました！`);
     
@@ -622,352 +704,6 @@ client.on(Events.MessageCreate, async message => {
     }
 });
 
-// 朝の通知を手動トリガー 🌅 修正版（重複防止強化）
-async function triggerMorningNotifications(message) {
-    try {
-        const userId = message.author.id;
-        const channel = message.channel;
-        
-        // 🔒 重複防止強化: 最後の起床通知から1時間以内は送信しない
-        const lastNotificationKey = `morning_notification_${userId}`;
-        const lastNotificationTime = global[lastNotificationKey] || 0;
-        const now = Date.now();
-        const oneHour = 60 * 60 * 1000;
-        
-        if (now - lastNotificationTime < oneHour) {
-            console.log(`⏰ 起床通知スキップ（1時間以内に送信済み）: ${userId}`);
-            await message.react('⏰');
-            return;
-        }
-        
-        // 🔒 実行中フラグを設定（同時実行防止）
-        const executingKey = `morning_executing_${userId}`;
-        if (global[executingKey]) {
-            console.log(`🔄 起床通知実行中につきスキップ: ${userId}`);
-            return;
-        }
-        
-        // 実行開始をマーク
-        global[executingKey] = true;
-        console.log(`🔒 起床通知実行開始: ${userId}`);
-        
-        try {
-            // 朝の通知を送信
-            await sendMorningNotificationSet(channel, userId);
-            
-            // 最後の通知時間を記録
-            global[lastNotificationKey] = now;
-            
-            // 確認メッセージ
-            await message.react('☀️');
-            
-            console.log(`✅ 起床通知送信完了: ${userId}`);
-            
-        } finally {
-            // 🔒 実行完了フラグをクリア（必ず実行）
-            delete global[executingKey];
-            console.log(`🔓 起床通知実行完了: ${userId}`);
-        }
-        
-    } catch (error) {
-        console.error('朝の通知トリガーエラー:', error);
-        
-        // エラー時もフラグをクリア
-        const executingKey = `morning_executing_${message.author.id}`;
-        delete global[executingKey];
-        
-        await message.react('❌');
-    }
-}
-
-// 夜の通知を手動トリガー 🌙 修正版（重複防止強化）
-async function triggerEveningNotifications(message) {
-    try {
-        const userId = message.author.id;
-        const channel = message.channel;
-        
-        // 🔒 重複防止強化: 最後の就寝通知から1時間以内は送信しない
-        const lastNotificationKey = `evening_notification_${userId}`;
-        const lastNotificationTime = global[lastNotificationKey] || 0;
-        const now = Date.now();
-        const oneHour = 60 * 60 * 1000;
-        
-        if (now - lastNotificationTime < oneHour) {
-            console.log(`⏰ 就寝通知スキップ（1時間以内に送信済み）: ${userId}`);
-            await message.react('⏰');
-            return;
-        }
-        
-        // 🔒 実行中フラグを設定（同時実行防止）
-        const executingKey = `evening_executing_${userId}`;
-        if (global[executingKey]) {
-            console.log(`🔄 就寝通知実行中につきスキップ: ${userId}`);
-            return;
-        }
-        
-        // 実行開始をマーク
-        global[executingKey] = true;
-        console.log(`🔒 就寝通知実行開始: ${userId}`);
-        
-        try {
-            // 夜の通知を送信
-            await sendEveningNotificationSet(channel, userId);
-            
-            // 最後の通知時間を記録
-            global[lastNotificationKey] = now;
-            
-            // 確認メッセージ
-            await message.react('🌙');
-            
-            console.log(`✅ 就寝通知送信完了: ${userId}`);
-            
-        } finally {
-            // 🔒 実行完了フラグをクリア（必ず実行）
-            delete global[executingKey];
-            console.log(`🔓 就寝通知実行完了: ${userId}`);
-        }
-        
-    } catch (error) {
-        console.error('夜の通知トリガーエラー:', error);
-        
-        // エラー時もフラグをクリア
-        const executingKey = `evening_executing_${message.author.id}`;
-        delete global[executingKey];
-        
-        await message.react('❌');
-    }
-}
-
-// 朝の通知セットを送信 🌅 修正版（習慣削除、ルーティン修正）
-async function sendMorningNotificationSet(channel, userId) {
-    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-    
-    console.log(`🌅 朝の通知セット送信開始: ${userId}`);
-    
-    // 1. Who Am I リマインダー（ephemeralに変更）
-    try {
-        const whoAmIEmbed = new EmbedBuilder()
-            .setTitle('🌟 おはようございます！')
-            .setDescription(`<@${userId}> 新しい一日の始まりです！\n今日のあなたを確認してみましょう。`)
-            .addFields(
-                { name: '💭 今日の自分', value: 'Who Am I で今日の気持ちや目標を確認', inline: false },
-                { name: '🎯 今日の意識', value: '今日はどんな自分でありたいですか？', inline: false }
-            )
-            .setColor('#FFD700')
-            .setTimestamp();
-
-        const whoAmIRow = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('whoami_setup_start')
-                    .setLabel('🌟 Who Am I 確認')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId('whoami_skip')
-                    .setLabel('⏭️ スキップ')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-        // ephemeral（自分だけ表示）で送信
-        const whoAmIMessage = await channel.send({ 
-            content: `<@${userId}> のみに表示`,
-            embeds: [whoAmIEmbed], 
-            components: [whoAmIRow]
-        });
-        
-        // メッセージを一定時間後に削除（疑似ephemeral）
-        setTimeout(() => {
-            whoAmIMessage.delete().catch(console.error);
-        }, 300000); // 5分後に削除
-        
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2秒待機
-    } catch (error) {
-        console.error('Who Am I 通知送信エラー:', error);
-    }
-
-    // 2. 体重記録リマインダー
-    try {
-        const weightEmbed = new EmbedBuilder()
-            .setTitle('⚖️ 朝の体重測定')
-            .setDescription(`<@${userId}> 今日の体重を記録しましょう！`)
-            .addFields(
-                { name: '📊 継続の力', value: '毎日の記録が変化を可視化します', inline: false },
-                { name: '💡 ヒント', value: '起床後、トイレ後の測定がおすすめです', inline: false }
-            )
-            .setColor('#00BCD4')
-            .setTimestamp();
-
-        const weightRow = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`weight_record_${userId}`)
-                    .setLabel('⚖️ 体重を記録')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId('weight_skip')
-                    .setLabel('⏭️ 後で記録')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-        await channel.send({ embeds: [weightEmbed], components: [weightRow] });
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2秒待機
-    } catch (error) {
-        console.error('体重記録通知送信エラー:', error);
-    }
-
-    // 3. 朝のルーティン開始リマインダー（修正版）
-    try {
-        if (routineHandler && routineHandler.routineService) {
-            let routines = [];
-            
-            // routineService のメソッドを安全に呼び出し
-            try {
-                if (typeof routineHandler.routineService.getUserRoutines === 'function') {
-                    routines = await routineHandler.routineService.getUserRoutines(userId);
-                } else if (typeof routineHandler.routineService.getRoutines === 'function') {
-                    // 代替メソッドを試行
-                    const allRoutines = await routineHandler.routineService.getRoutines();
-                    routines = allRoutines.filter(r => r.userId === userId);
-                } else {
-                    console.log('⚠️ ルーティン取得メソッドが見つかりません');
-                    // 直接シートから取得を試行
-                    const sheetsUtils = require('./utils/sheets');
-                    const routineData = await sheetsUtils.getSheetData('routines_master', 'A:Z');
-                    routines = routineData.slice(1).filter(row => row[1] === userId).map(row => ({
-                        id: row[0],
-                        userId: row[1],
-                        name: row[2],
-                        description: row[3] || ''
-                    }));
-                }
-            } catch (routineError) {
-                console.error('ルーティン取得エラー:', routineError);
-                routines = [];
-            }
-            
-            const morningRoutines = routines.filter(r => 
-                r.name.toLowerCase().includes('朝') || 
-                r.name.toLowerCase().includes('モーニング') || 
-                r.name.toLowerCase().includes('morning') ||
-                r.name.toLowerCase().includes('起床')
-            );
-
-            if (morningRoutines.length > 0) {
-                const routineEmbed = new EmbedBuilder()
-                    .setTitle('🌅 朝のルーティン')
-                    .setDescription(`<@${userId}> 朝のルーティンを開始しますか？`)
-                    .addFields(
-                        { name: '📋 利用可能なルーティン', value: morningRoutines.map(r => `• ${r.name}`).join('\n'), inline: false },
-                        { name: '💪 今日も頑張りましょう！', value: '良い一日の始まりです', inline: false }
-                    )
-                    .setColor('#FF9800')
-                    .setTimestamp();
-
-                const routineRow = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`routine_start_${morningRoutines[0].id}`)
-                            .setLabel('🎯 ルーティン開始')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('routine_later')
-                            .setLabel('⏭️ 後で実行')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-
-                await channel.send({ embeds: [routineEmbed], components: [routineRow] });
-            } else {
-                console.log('📋 朝のルーティンが見つかりませんでした');
-            }
-        } else {
-            console.log('⚠️ routineHandlerまたはroutineServiceが初期化されていません');
-        }
-    } catch (routineError) {
-        console.error('ルーティンリマインダー送信エラー:', routineError);
-    }
-    
-    console.log(`✅ 朝の通知セット送信完了: ${userId}`);
-}
-
-// 夜の通知セットを送信 🌙 新追加
-async function sendEveningNotificationSet(channel, userId) {
-    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-    
-    console.log(`🌙 夜の通知セット送信開始: ${userId}`);
-    
-    try {
-        if (routineHandler && routineHandler.routineService) {
-            let routines = [];
-            
-            // routineService のメソッドを安全に呼び出し
-            try {
-                if (typeof routineHandler.routineService.getUserRoutines === 'function') {
-                    routines = await routineHandler.routineService.getUserRoutines(userId);
-                } else if (typeof routineHandler.routineService.getRoutines === 'function') {
-                    const allRoutines = await routineHandler.routineService.getRoutines();
-                    routines = allRoutines.filter(r => r.userId === userId);
-                } else {
-                    // 直接シートから取得を試行
-                    const sheetsUtils = require('./utils/sheets');
-                    const routineData = await sheetsUtils.getSheetData('routines_master', 'A:Z');
-                    routines = routineData.slice(1).filter(row => row[1] === userId).map(row => ({
-                        id: row[0],
-                        userId: row[1],
-                        name: row[2],
-                        description: row[3] || ''
-                    }));
-                }
-            } catch (routineError) {
-                console.error('夜のルーティン取得エラー:', routineError);
-                routines = [];
-            }
-            
-            const eveningRoutines = routines.filter(r => 
-                r.name.toLowerCase().includes('夜') || 
-                r.name.toLowerCase().includes('夕方') || 
-                r.name.toLowerCase().includes('evening') ||
-                r.name.toLowerCase().includes('就寝') ||
-                r.name.toLowerCase().includes('寝る前')
-            );
-
-            if (eveningRoutines.length > 0) {
-                const routineEmbed = new EmbedBuilder()
-                    .setTitle('🌙 夜のルーティン')
-                    .setDescription(`<@${userId}> 今日一日お疲れ様でした！\n夜のルーティンを開始しますか？`)
-                    .addFields(
-                        { name: '📋 利用可能なルーティン', value: eveningRoutines.map(r => `• ${r.name}`).join('\n'), inline: false },
-                        { name: '😴 良い睡眠を', value: '明日に向けてゆっくり休みましょう', inline: false }
-                    )
-                    .setColor('#4A154B')
-                    .setTimestamp();
-
-                const routineRow = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`routine_start_${eveningRoutines[0].id}`)
-                            .setLabel('🎯 ルーティン開始')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('routine_later')
-                            .setLabel('⏭️ 後で実行')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-
-                await channel.send({ embeds: [routineEmbed], components: [routineRow] });
-            } else {
-                console.log('📋 夜のルーティンが見つかりませんでした');
-            }
-        } else {
-            console.log('⚠️ routineHandlerまたはroutineServiceが初期化されていません');
-        }
-    } catch (routineError) {
-        console.error('夜のルーティンリマインダー送信エラー:', routineError);
-    }
-    
-    console.log(`✅ 夜の通知セット送信完了: ${userId}`);
-}
-
-// ===== インタラクション処理（修正版・defer問題解決） =====
 // ===== インタラクション処理（修正版・defer問題解決） =====
 client.on(Events.InteractionCreate, async interaction => {
    try {
