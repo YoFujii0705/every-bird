@@ -1,4 +1,4 @@
-// bot.js - 完全版（全機能統合 + 通知システム + ボタン処理修正版 + goals機能追加 + 起床トリガー機能）
+// bot.js - 修正版 Part 1: インポート・初期設定
 
 // ===== インポート部分 =====
 const { Client, Events, GatewayIntentBits, Collection, REST, Routes, SlashCommandBuilder } = require('discord.js');
@@ -9,7 +9,7 @@ const fs = require('fs');
 const diaryCommands = require('./commands/diary');
 const habitCommands = require('./commands/habit');
 const weightCommands = require('./commands/weight');
-const goalsCommands = require('./commands/goals'); // 🎯 新追加
+const goalsCommands = require('./commands/goals');
 const interactionHandler = require('./handlers/interactions');
 const routineCommands = require('./commands/routine');
 const RoutineHandler = require('./handlers/routineHandler');
@@ -34,19 +34,25 @@ const client = new Client({
     ],
 });
 
-// 通知マネージャーのインスタンス
+// グローバル変数（1つのインスタンスのみ保持）
 let notificationManager;
 let routineHandler;
 let habitNotificationService;
 let habitNotificationsHandler;
 
-// コマンド配列の作成
+// 重複実行防止フラグ
+let isInitialized = false;
+
+// sheetsUtilsのインポート
+const sheetsUtils = require('./utils/sheets');
+
+// ===== コマンド配列の作成 =====
 const commands = [
     diaryCommands.createCommand(),
     habitCommands.createCommand(),
     weightCommands.createCommand(),
-    goalsCommands.createCommand(), // 🎯 新追加
-    whoamiCommands.createCommand(), // 🌟 新追加
+    goalsCommands.createCommand(),
+    whoamiCommands.createCommand(),
     routineCommands.createCommand(), 
     
     // 🔔 通知テスト用コマンド
@@ -69,7 +75,7 @@ const commands = [
             subcommand
                 .setName('weekly')
                 .setDescription('週次レポートをテスト'))
-        .addSubcommand(subcommand =>  // 🌟 新追加
+        .addSubcommand(subcommand =>
             subcommand
                 .setName('whoami')
                 .setDescription('Who Am I リマインダーをテスト'))
@@ -77,11 +83,11 @@ const commands = [
             subcommand
                 .setName('habit-notification')
                 .setDescription('🔔 習慣通知をテスト'))
-        .addSubcommand(subcommand =>  // 🌅 新追加
+        .addSubcommand(subcommand =>
             subcommand
                 .setName('morning')
                 .setDescription('朝の通知セットをテスト'))
-        .addSubcommand(subcommand =>  // 🌙 新追加
+        .addSubcommand(subcommand =>
             subcommand
                 .setName('evening')
                 .setDescription('夜の通知セットをテスト'))
@@ -91,22 +97,29 @@ const commands = [
 // REST APIの設定
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-const sheetsUtils = require('./utils/sheets');
+// bot.js - 修正版 Part 2: 初期化関数
 
-// Bot起動時に実行
+// Bot起動時に実行（重複実行防止版）
 async function initializeBot() {
+    if (isInitialized) {
+        console.log('⚠️ 既に初期化済みのためスキップ');
+        return;
+    }
+    
     try {
         // 食事記録用シートの初期化
         await sheetsUtils.initializeMealLogsSheet();
         console.log('✅ 食事記録シートの初期化完了');
         
-        // Who Am I用シートの初期化 🌟 新追加
+        // Who Am I用シートの初期化
         await sheetsUtils.initializeWhoAmISheet();
         console.log('✅ Who Am I シートの初期化完了');
         
         // 🔔 習慣通知用シートの初期化
         await initializeHabitNotificationSheet();
         console.log('✅ 習慣通知シートの初期化完了');
+
+        isInitialized = true;
 
     } catch (error) {
         console.error('❌ 初期化エラー:', error);
@@ -139,15 +152,14 @@ async function initializeHabitNotificationSheet() {
     }
 }
 
-// Botが起動したら実行
-client.once('ready', async () => {
-    console.log('Bot is ready!');
-    await initializeBot();
-});
+// bot.js - 修正版 Part 3: Readyイベント（重複削除版）
 
-// ===== Ready イベント =====
+// ===== Ready イベント（1つのみ） =====
 client.once(Events.ClientReady, async readyClient => {
     console.log(`✅ ${readyClient.user.tag} がログインしました！`);
+    
+    // Bot初期化を実行
+    await initializeBot();
     
     // コマンド登録
     try {
@@ -168,6 +180,7 @@ client.once(Events.ClientReady, async readyClient => {
     try {
         notificationManager = new NotificationManager(client);
         notificationManager.initialize();
+        console.log('✅ 通知システムを初期化しました');
     } catch (error) {
         console.error('通知システム初期化エラー:', error);
     }
@@ -226,7 +239,9 @@ client.once(Events.ClientReady, async readyClient => {
     console.log('🤖 Botが正常に起動しました！');
 });
 
-// ===== メッセージ処理（起床・就寝トリガー用） 🌅🌙 修正版 =====
+// bot.js - 修正版 Part 4: メッセージ処理・朝夜通知
+
+// ===== メッセージ処理（起床・就寝トリガー用） =====
 client.on(Events.MessageCreate, async message => {
     // Botのメッセージは無視
     if (message.author.bot) return;
@@ -239,7 +254,7 @@ client.on(Events.MessageCreate, async message => {
         messageContent.includes(keyword.toLowerCase())
     );
     
-    // 就寝キーワードをチェック 🌙 新追加
+    // 就寝キーワードをチェック
     const sleepKeywords = ['寝る', 'おやすみ', 'good night', 'ねる', 'おやすみなさい'];
     const isSleepMessage = sleepKeywords.some(keyword => 
         messageContent.includes(keyword.toLowerCase())
@@ -254,7 +269,7 @@ client.on(Events.MessageCreate, async message => {
     }
 });
 
-// 朝の通知を手動トリガー 🌅 修正版
+// 朝の通知を手動トリガー（重複防止強化版）
 async function triggerMorningNotifications(message) {
     try {
         const userId = message.author.id;
@@ -287,7 +302,7 @@ async function triggerMorningNotifications(message) {
     }
 }
 
-// 夜の通知を手動トリガー 🌙 新追加
+// 夜の通知を手動トリガー（重複防止強化版）
 async function triggerEveningNotifications(message) {
     try {
         const userId = message.author.id;
@@ -320,7 +335,9 @@ async function triggerEveningNotifications(message) {
     }
 }
 
-// 朝の通知セットを送信 🌅 修正版（重複防止強化）
+// bot.js - 修正版 Part 5: 朝の通知セット送信
+
+// 朝の通知セットを送信（重複防止強化版）
 async function sendMorningNotificationSet(channel, userId) {
     const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
     
@@ -515,194 +532,120 @@ async function sendMorningNotificationSet(channel, userId) {
     }
 }
 
+// bot.js - 修正版 Part 6: 夜の通知セット・インタラクション処理開始
 
-// 夜の通知セットを送信 🌙 新追加
+// 夜の通知セットを送信（修正版）
 async function sendEveningNotificationSet(channel, userId) {
     const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
     
     console.log(`🌙 夜の通知セット送信開始: ${userId}`);
     
     try {
-        if (routineHandler && routineHandler.routineService) {
-            let routines = [];
-            
-            // routineService のメソッドを安全に呼び出し
-            try {
-                if (typeof routineHandler.routineService.getUserRoutines === 'function') {
-                    routines = await routineHandler.routineService.getUserRoutines(userId);
-                } else if (typeof routineHandler.routineService.getRoutines === 'function') {
-                    const allRoutines = await routineHandler.routineService.getRoutines();
-                    routines = allRoutines.filter(r => r.userId === userId);
-                } else {
-                    // 直接シートから取得を試行
-                    const sheetsUtils = require('./utils/sheets');
-                    const routineData = await sheetsUtils.getSheetData('routines_master', 'A:Z');
-                    routines = routineData.slice(1).filter(row => row[1] === userId).map(row => ({
-                        id: row[0],
-                        userId: row[1],
-                        name: row[2],
-                        description: row[3] || ''
-                    }));
-                }
-            } catch (routineError) {
-                console.error('夜のルーティン取得エラー:', routineError);
-                routines = [];
-            }
-            
-            const eveningRoutines = routines.filter(r => 
-                r.name.toLowerCase().includes('夜') || 
-                r.name.toLowerCase().includes('夕方') || 
-                r.name.toLowerCase().includes('evening') ||
-                r.name.toLowerCase().includes('就寝') ||
-                r.name.toLowerCase().includes('寝る前')
-            );
+        // 1. 日記書くリマインダー
+        try {
+            const diaryEmbed = new EmbedBuilder()
+                .setTitle('📝 今日の日記を書きましょう')
+                .setDescription(`<@${userId}> 今日一日を振り返って日記を書いてみませんか？`)
+                .addFields(
+                    { name: '✨ 振り返りの力', value: '今日の出来事や感情を記録することで、成長につながります', inline: false },
+                    { name: '💭 考えてみよう', value: '今日良かったこと、学んだこと、明日への気持ち', inline: false }
+                )
+                .setColor('#9B59B6')
+                .setTimestamp();
 
-            if (eveningRoutines.length > 0) {
-                const routineEmbed = new EmbedBuilder()
-                    .setTitle('🌙 夜のルーティン')
-                    .setDescription(`<@${userId}> 今日一日お疲れ様でした！\n夜のルーティンを開始しますか？`)
-                    .addFields(
-                        { name: '📋 利用可能なルーティン', value: eveningRoutines.map(r => `• ${r.name}`).join('\n'), inline: false },
-                        { name: '😴 良い睡眠を', value: '明日に向けてゆっくり休みましょう', inline: false }
-                    )
-                    .setColor('#4A154B')
-                    .setTimestamp();
+            const diaryRow = new ActionRowBuilder()
+    .addComponents(
+        new ButtonBuilder()
+            .setCustomId('diary_write_start')  // ← この部分が重要
+            .setLabel('📝 日記を書く')
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId('diary_skip')
+            .setLabel('⏭️ 後で書く')
+            .setStyle(ButtonStyle.Secondary)
+    );
 
-                const routineRow = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`routine_start_${eveningRoutines[0].id}`)
-                            .setLabel('🎯 ルーティン開始')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('routine_later')
-                            .setLabel('⏭️ 後で実行')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-
-                await channel.send({ embeds: [routineEmbed], components: [routineRow] });
-            } else {
-                console.log('📋 夜のルーティンが見つかりませんでした');
-            }
-        } else {
-            console.log('⚠️ routineHandlerまたはroutineServiceが初期化されていません');
+            await channel.send({ embeds: [diaryEmbed], components: [diaryRow] });
+            await new Promise(resolve => setTimeout(resolve, 3000)); // 3秒待機
+        } catch (error) {
+            console.error('日記リマインダー送信エラー:', error);
         }
-    } catch (routineError) {
-        console.error('夜のルーティンリマインダー送信エラー:', routineError);
+
+        // 2. 夜のルーティンリマインダー
+        try {
+            if (routineHandler && routineHandler.routineService) {
+                let routines = [];
+                
+                // routineService のメソッドを安全に呼び出し
+                try {
+                    if (typeof routineHandler.routineService.getUserRoutines === 'function') {
+                        routines = await routineHandler.routineService.getUserRoutines(userId);
+                    } else if (typeof routineHandler.routineService.getRoutines === 'function') {
+                        const allRoutines = await routineHandler.routineService.getRoutines();
+                        routines = allRoutines.filter(r => r.userId === userId);
+                    } else {
+                        // 直接シートから取得を試行
+                        const routineData = await sheetsUtils.getSheetData('routines_master', 'A:Z');
+                        routines = routineData.slice(1).filter(row => row[1] === userId).map(row => ({
+                            id: row[0],
+                            userId: row[1],
+                            name: row[2],
+                            description: row[3] || ''
+                        }));
+                    }
+                } catch (routineError) {
+                    console.error('夜のルーティン取得エラー:', routineError);
+                    routines = [];
+                }
+                
+                const eveningRoutines = routines.filter(r => 
+                    r.name.toLowerCase().includes('夜') || 
+                    r.name.toLowerCase().includes('夕方') || 
+                    r.name.toLowerCase().includes('evening') ||
+                    r.name.toLowerCase().includes('就寝') ||
+                    r.name.toLowerCase().includes('寝る前')
+                );
+
+                if (eveningRoutines.length > 0) {
+                    const routineEmbed = new EmbedBuilder()
+                        .setTitle('🌙 夜のルーティン')
+                        .setDescription(`<@${userId}> 今日一日お疲れ様でした！\n夜のルーティンを開始しますか？`)
+                        .addFields(
+                            { name: '📋 利用可能なルーティン', value: eveningRoutines.map(r => `• ${r.name}`).join('\n'), inline: false },
+                            { name: '😴 良い睡眠を', value: '明日に向けてゆっくり休みましょう', inline: false }
+                        )
+                        .setColor('#4A154B')
+                        .setTimestamp();
+
+                    const routineRow = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`routine_start_${eveningRoutines[0].id}`)
+                                .setLabel('🎯 ルーティン開始')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('routine_later')
+                                .setLabel('⏭️ 後で実行')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+
+                    await channel.send({ embeds: [routineEmbed], components: [routineRow] });
+                } else {
+                    console.log('📋 夜のルーティンが見つかりませんでした');
+                }
+            } else {
+                console.log('⚠️ routineHandlerまたはroutineServiceが初期化されていません');
+            }
+        } catch (routineError) {
+            console.error('夜のルーティンリマインダー送信エラー:', routineError);
+        }
+        
+        console.log(`✅ 夜の通知セット送信完了: ${userId}`);
+        
+    } catch (error) {
+        console.error('夜の通知セット送信エラー:', error);
     }
-    
-    console.log(`✅ 夜の通知セット送信完了: ${userId}`);
 }
-
-
-// ===== Ready イベント =====
-client.once(Events.ClientReady, async readyClient => {
-    console.log(`✅ ${readyClient.user.tag} がログインしました！`);
-    
-    // コマンド登録
-    try {
-        console.log('🔄 スラッシュコマンドを登録中...');
-        
-        // グローバルコマンドとして登録
-        await rest.put(
-            Routes.applicationCommands(readyClient.user.id),
-            { body: commands }
-        );
-        
-        console.log('✅ スラッシュコマンドを登録しました');
-    } catch (error) {
-        console.error('❌ コマンド登録エラー:', error);
-    }
-    
-    // 通知システムを初期化
-    try {
-        notificationManager = new NotificationManager(client);
-        notificationManager.initialize();
-    } catch (error) {
-        console.error('通知システム初期化エラー:', error);
-    }
-
-    // ルーティンハンドラーを初期化
-    try {
-        routineHandler = new RoutineHandler();
-        console.log('🔄 ルーティンハンドラーを初期化しました');
-        
-        // デバッグ情報を出力
-        console.log('🔍 ルーティンサービス確認:', {
-            hasRoutineService: !!routineHandler.routineService,
-            routineServiceType: routineHandler.routineService?.constructor?.name,
-            hasGoogleSheetsService: !!routineHandler.routineService?.googleSheetsService
-        });
-        
-    } catch (error) {
-        console.error('ルーティンハンドラー初期化エラー:', error);
-    }
-
-    // ルーティン通知システムを初期化
-    try {
-        const { RoutineNotificationService } = require('./services/routineNotificationService');
-        const routineNotificationService = new RoutineNotificationService(client, routineHandler.routineService);
-        
-        // ハンドラーに通知サービスを設定
-        routineHandler.notificationService = routineNotificationService;
-        
-        // 既存の通知をロード
-        await routineNotificationService.loadAllNotifications();
-        
-        console.log('🔔 ルーティン通知システムを初期化しました');
-    } catch (error) {
-        console.error('ルーティン通知システム初期化エラー:', error);
-    }
-
-    // 🔔 Habit通知システムを初期化
-    try {
-        console.log('🔔 Habit通知システム初期化中...');
-        
-        // Habit通知サービスを初期化
-        habitNotificationService = new HabitNotificationService(client, sheetsUtils);
-        habitNotificationsHandler = new HabitNotificationsHandler(habitNotificationService, sheetsUtils);
-        
-        // グローバルに設定（habit.jsから参照するため）
-        global.habitNotificationsHandler = habitNotificationsHandler;
-        
-        // Habit通知をロード
-        await habitNotificationService.loadAllNotifications();
-        console.log('✅ Habit通知システム初期化完了');
-        
-    } catch (error) {
-        console.error('❌ Habit通知システム初期化エラー:', error);
-    }
- 
-    console.log('🤖 Botが正常に起動しました！');
-});
-
-// ===== メッセージ処理（起床・就寝トリガー用） 🌅🌙 修正版 =====
-client.on(Events.MessageCreate, async message => {
-    // Botのメッセージは無視
-    if (message.author.bot) return;
-    
-    const messageContent = message.content.toLowerCase();
-    
-    // 起床キーワードをチェック
-    const wakeupKeywords = ['起きた', 'おはよう', 'おはよ', 'good morning', 'wake up', 'おきた'];
-    const isWakeupMessage = wakeupKeywords.some(keyword => 
-        messageContent.includes(keyword.toLowerCase())
-    );
-    
-    // 就寝キーワードをチェック 🌙 新追加
-    const sleepKeywords = ['寝る', 'おやすみ', 'good night', 'ねる', 'おやすみなさい'];
-    const isSleepMessage = sleepKeywords.some(keyword => 
-        messageContent.includes(keyword.toLowerCase())
-    );
-    
-    if (isWakeupMessage) {
-        console.log(`🌅 起床メッセージを検知: ${message.author.id} - "${message.content}"`);
-        await triggerMorningNotifications(message);
-    } else if (isSleepMessage) {
-        console.log(`🌙 就寝メッセージを検知: ${message.author.id} - "${message.content}"`);
-        await triggerEveningNotifications(message);
-    }
-});
 
 // ===== インタラクション処理（修正版・defer問題解決） =====
 client.on(Events.InteractionCreate, async interaction => {
@@ -811,6 +754,13 @@ client.on(Events.InteractionCreate, async interaction => {
                    return;
                }
 
+               // ===== 日記書くボタンの修正 =====
+               if (customId === 'diary_write_start') {
+                   console.log('📝 日記書くボタンを検出');
+                   await showDiaryModal(interaction);
+                   return;
+               }
+
                // 🔔 Habit通知関連のボタン処理
                if (customId.startsWith('habit_quick_done_') || 
                    customId.startsWith('habit_snooze_') ||
@@ -861,6 +811,13 @@ client.on(Events.InteractionCreate, async interaction => {
                } else if (customId === 'routine_later') {
                    await interaction.editReply({
                        content: '⏭️ ルーティンを後で実行します。お疲れ様でした！',
+                       embeds: [],
+                       components: []
+                   });
+                   return;
+               } else if (customId === 'diary_skip') {
+                   await interaction.editReply({
+                       content: '⏭️ 日記を後で書きます。今日もお疲れ様でした！',
                        embeds: [],
                        components: []
                    });
@@ -1034,6 +991,7 @@ client.on(Events.InteractionCreate, async interaction => {
                    console.error('エラーメッセージ送信失敗:', replyError);
                }
            }
+       // bot.js - 修正版 Part 8: セレクトメニュー・モーダル処理
 
        } else if (interaction.isStringSelectMenu()) {
            const customId = interaction.customId;
@@ -1134,6 +1092,9 @@ client.on(Events.InteractionCreate, async interaction => {
        }
    }
 });
+
+// bot.js - 修正版 Part 9: ヘルパー関数1 - 統合目標・通知テスト
+
 // ===== 🎯 統合目標ダッシュボード用のヘルパー関数 =====
 
 // 目標カレンダー表示（update版）
@@ -1175,6 +1136,37 @@ async function showGoalsCalendar(interaction, year, month) {
         } else {
             await interaction.followUp({ content: errorMessage, ephemeral: true });
         }
+    }
+}
+
+// goals専用のカレンダーナビゲーション処理
+async function handleGoalsCalendarNavigation(interaction) {
+    const customId = interaction.customId;
+    
+    // goals_calendar_2025_1 形式からyearとmonthを抽出
+    const parts = customId.split('_');
+    if (parts.length >= 4) {
+        const year = parseInt(parts[2]);
+        const month = parseInt(parts[3]);
+        
+        const currentYear = new Date().getFullYear();
+        const maxYear = currentYear + 10;
+        
+        if (!isNaN(year) && !isNaN(month) && year >= 2020 && year <= maxYear && month >= 1 && month <= 12) {
+            await showGoalsCalendar(interaction, year, month);
+        } else {
+            await interaction.editReply({ 
+                content: '❌ 無効な日付です。', 
+                embeds: [],
+                components: []
+            });
+        }
+    } else {
+        await interaction.editReply({ 
+            content: '❌ カレンダーナビゲーションエラー。', 
+            embeds: [],
+            components: []
+        });
     }
 }
 
@@ -1279,7 +1271,7 @@ async function handleTestNotification(interaction) {
                 break;
 
             case 'morning':
-                // 🌅 朝の通知セットのテスト送信 - 新追加
+                // 🌅 朝の通知セットのテスト送信
                 const channel = interaction.channel;
                 const userId = interaction.user.id;
                 
@@ -1292,7 +1284,7 @@ async function handleTestNotification(interaction) {
                 break;
 
             case 'evening':
-                // 🌙 夜の通知セットのテスト送信 - 新追加
+                // 🌙 夜の通知セットのテスト送信
                 const eveningChannel = interaction.channel;
                 const eveningUserId = interaction.user.id;
                 
@@ -1318,6 +1310,8 @@ async function handleTestNotification(interaction) {
         });
     }
 }
+
+// bot.js - 修正版 Part 10: ヘルパー関数2 - モーダル・UI関数
 
 // ===== 通知システム用のヘルパー関数 =====
 
@@ -1353,6 +1347,170 @@ async function showQuickWeightModal(interaction) {
     await interaction.showModal(modal);
 }
 
+// 日記モーダル表示（修正版 - 気分選択表示に変更）
+async function showDiaryModal(interaction) {
+    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+    
+    // 気分選択用のセレクトメニューを表示
+    const moodOptions = [
+        { label: '😊 最高', value: '😊', description: '今日はとても良い気分です' },
+        { label: '🙂 良い', value: '🙂', description: '今日は良い気分です' },
+        { label: '😐 普通', value: '😐', description: '普通の気分です' },
+        { label: '😔 悪い', value: '😔', description: '今日は少し気分が良くないです' },
+        { label: '😞 最悪', value: '😞', description: '今日はとても気分が悪いです' }
+    ];
+
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('diary_mood_first_select')
+        .setPlaceholder('今日の気分を選択してください')
+        .addOptions(moodOptions);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+
+    const embed = new EmbedBuilder()
+        .setTitle('📝 今日の気分を選択')
+        .setDescription('まず今日の気分を選択してから、日記を書きましょう。')
+        .setColor(0x9B59B6);
+
+    await interaction.reply({
+        embeds: [embed],
+        components: [row],
+    });
+}
+
+// 習慣追加モーダル表示
+async function showAddHabitModal(interaction) {
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+    
+    const modal = new ModalBuilder()
+        .setCustomId('add_habit_modal')
+        .setTitle('新しい習慣を追加');
+
+    const nameInput = new TextInputBuilder()
+        .setCustomId('habit_name')
+        .setLabel('習慣名')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('例: 朝の散歩、読書、瞑想')
+        .setRequired(true)
+        .setMaxLength(50);
+
+    const frequencyInput = new TextInputBuilder()
+        .setCustomId('habit_frequency')
+        .setLabel('頻度')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('daily, weekly, custom')
+        .setRequired(true)
+        .setMaxLength(20);
+
+    const difficultyInput = new TextInputBuilder()
+        .setCustomId('habit_difficulty')
+        .setLabel('難易度')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('easy, normal, hard')
+        .setRequired(true)
+        .setMaxLength(20);
+
+    const nameRow = new ActionRowBuilder().addComponents(nameInput);
+    const frequencyRow = new ActionRowBuilder().addComponents(frequencyInput);
+    const difficultyRow = new ActionRowBuilder().addComponents(difficultyInput);
+
+    modal.addComponents(nameRow, frequencyRow, difficultyRow);
+    
+    await interaction.showModal(modal);
+}
+
+// 週次目標設定モーダル
+async function showWeeklyGoalsModal(interaction) {
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+    
+    const modal = new ModalBuilder()
+        .setCustomId('weekly_goals_modal')
+        .setTitle('今週の目標設定');
+
+    const goalInput = new TextInputBuilder()
+        .setCustomId('weekly_goal')
+        .setLabel('今週の目標')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('例: 毎日運動する、体重を1kg減らす、日記を5日書く')
+        .setRequired(true)
+        .setMaxLength(500);
+
+    const goalRow = new ActionRowBuilder().addComponents(goalInput);
+    modal.addComponents(goalRow);
+    
+    await interaction.showModal(modal);
+}
+
+// コンテンツを指定した文字数で分割する関数
+function splitContent(content, maxLength) {
+    const chunks = [];
+    let currentChunk = '';
+    
+    // 文を単位で分割（句読点で区切る）
+    const sentences = content.split(/([。！？\n])/);
+    
+    for (let i = 0; i < sentences.length; i += 2) {
+        const sentence = (sentences[i] || '') + (sentences[i + 1] || '');
+        
+        if (currentChunk.length + sentence.length <= maxLength) {
+            currentChunk += sentence;
+        } else {
+            if (currentChunk) {
+                chunks.push(currentChunk);
+                currentChunk = sentence;
+            } else {
+                // 1つの文が長すぎる場合は強制的に分割
+                chunks.push(sentence.substring(0, maxLength));
+                currentChunk = sentence.substring(maxLength);
+            }
+        }
+    }
+    
+    if (currentChunk) {
+        chunks.push(currentChunk);
+    }
+    
+    return chunks;
+}
+
+// 日記Embed作成関数（長文対応）
+function createDiaryEmbed(date, mood, content) {
+    const { EmbedBuilder } = require('discord.js');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('📝 日記を保存しました')
+        .setColor(0x9B59B6)
+        .setTimestamp();
+
+    // 基本情報をfieldで表示
+    embed.addFields(
+        { name: '📅 日付', value: date, inline: true },
+        { name: '😊 気分', value: mood, inline: true }
+    );
+
+    // コンテンツの長さに応じて処理を分岐
+    if (content.length <= 4000) {
+        // 4000文字以下ならdescriptionに全て表示
+        embed.setDescription(`**今日の日記**\n${content}`);
+    } else {
+        // 4000文字を超える場合は分割
+        const chunks = splitContent(content, 1020); // field valueの制限を考慮
+        
+        embed.setDescription('**今日の日記**');
+        
+        chunks.forEach((chunk, index) => {
+            const fieldName = index === 0 ? '📖 内容' : `📖 内容 (続き ${index + 1})`;
+            embed.addFields({ name: fieldName, value: chunk, inline: false });
+        });
+    }
+
+    return embed;
+}
+
+// bot.js - 修正版 Part 11: ハンドラー関数1 - 体重・日記・習慣
+
+// ===== ハンドラー関数群 =====
+
 // クイック体重記録の処理（タイムアウト対策版）
 async function handleQuickWeightSubmit(interaction) {
     const weightValue = interaction.fields.getTextInputValue('weight_value');
@@ -1373,7 +1531,6 @@ async function handleQuickWeightSubmit(interaction) {
         await interaction.deferReply();
         
         const moment = require('moment');
-        const sheetsUtils = require('./utils/sheets');
         const calculations = require('./utils/calculations');
         const { EmbedBuilder } = require('discord.js');
         
@@ -1453,103 +1610,6 @@ async function handleQuickWeightSubmit(interaction) {
     }
 }
 
-// コンテンツを指定した文字数で分割する関数
-function splitContent(content, maxLength) {
-    const chunks = [];
-    let currentChunk = '';
-    
-    // 文を単位で分割（句読点で区切る）
-    const sentences = content.split(/([。！？\n])/);
-    
-    for (let i = 0; i < sentences.length; i += 2) {
-        const sentence = (sentences[i] || '') + (sentences[i + 1] || '');
-        
-        if (currentChunk.length + sentence.length <= maxLength) {
-            currentChunk += sentence;
-        } else {
-            if (currentChunk) {
-                chunks.push(currentChunk);
-                currentChunk = sentence;
-            } else {
-                // 1つの文が長すぎる場合は強制的に分割
-                chunks.push(sentence.substring(0, maxLength));
-                currentChunk = sentence.substring(maxLength);
-            }
-        }
-    }
-    
-    if (currentChunk) {
-        chunks.push(currentChunk);
-    }
-    
-    return chunks;
-}
-
-// 日記Embed作成関数（長文対応）
-function createDiaryEmbed(date, mood, content) {
-    const { EmbedBuilder } = require('discord.js');
-    
-    const embed = new EmbedBuilder()
-        .setTitle('📝 日記を保存しました')
-        .setColor(0x9B59B6)
-        .setTimestamp();
-
-    // 基本情報をfieldで表示
-    embed.addFields(
-        { name: '📅 日付', value: date, inline: true },
-        { name: '😊 気分', value: mood, inline: true }
-    );
-
-    // コンテンツの長さに応じて処理を分岐
-    if (content.length <= 4000) {
-        // 4000文字以下ならdescriptionに全て表示
-        embed.setDescription(`**今日の日記**\n${content}`);
-    } else {
-        // 4000文字を超える場合は分割
-        const chunks = splitContent(content, 1020); // field valueの制限を考慮
-        
-        embed.setDescription('**今日の日記**');
-        
-        chunks.forEach((chunk, index) => {
-            const fieldName = index === 0 ? '📖 内容' : `📖 内容 (続き ${index + 1})`;
-            embed.addFields({ name: fieldName, value: chunk, inline: false });
-        });
-    }
-
-    return embed;
-}
-
-// 日記モーダル表示 → 気分選択表示に変更
-async function showDiaryModal(interaction) {
-    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
-    
-    // 気分選択用のセレクトメニューを表示
-    const moodOptions = [
-        { label: '😊 最高', value: '😊', description: '今日はとても良い気分です' },
-        { label: '🙂 良い', value: '🙂', description: '今日は良い気分です' },
-        { label: '😐 普通', value: '😐', description: '普通の気分です' },
-        { label: '😔 悪い', value: '😔', description: '今日は少し気分が良くないです' },
-        { label: '😞 最悪', value: '😞', description: '今日はとても気分が悪いです' }
-    ];
-
-    const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('diary_mood_first_select')
-        .setPlaceholder('今日の気分を選択してください')
-        .addOptions(moodOptions);
-
-    const row = new ActionRowBuilder().addComponents(selectMenu);
-
-    const embed = new EmbedBuilder()
-        .setTitle('📝 今日の気分を選択')
-        .setDescription('まず今日の気分を選択してから、日記を書きましょう。')
-        .setColor(0x9B59B6);
-
-    await interaction.reply({
-        embeds: [embed],
-        components: [row],
-    });
-}
-
 // 最初の気分選択処理（新規）
 async function handleDiaryMoodFirstSelect(interaction) {
     const mood = interaction.values[0];
@@ -1586,7 +1646,6 @@ async function handleDiaryContentSubmit(interaction) {
     try {
         const userId = interaction.user.id;
         const today = require('moment')().format('YYYY-MM-DD');
-        const sheetsUtils = require('./utils/sheets');
         
         // 一時保存された気分を取得
         global.tempDiaryData = global.tempDiaryData || {};
@@ -1624,45 +1683,236 @@ async function handleDiaryContentSubmit(interaction) {
     }
 }
 
-// 習慣追加モーダル表示
-async function showAddHabitModal(interaction) {
-    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+// 習慣追加モーダル送信処理
+async function handleAddHabitSubmit(interaction) {
+    const name = interaction.fields.getTextInputValue('habit_name');
+    const frequency = interaction.fields.getTextInputValue('habit_frequency');
+    const difficulty = interaction.fields.getTextInputValue('habit_difficulty');
     
-    const modal = new ModalBuilder()
-        .setCustomId('add_habit_modal')
-        .setTitle('新しい習慣を追加');
+    try {
+        const userId = interaction.user.id;
+        
+        // 習慣を保存
+        const habitId = await sheetsUtils.saveHabitToSheet(userId, name, frequency, difficulty);
+        
+        const { EmbedBuilder } = require('discord.js');
+        
+        const difficultyEmoji = difficulty === 'easy' ? '🟢' : difficulty === 'normal' ? '🟡' : '🔴';
+        
+        const embed = new EmbedBuilder()
+            .setTitle('✅ 習慣を追加しました')
+            .addFields(
+                { name: '習慣名', value: name, inline: true },
+                { name: '頻度', value: frequency, inline: true },
+                { name: '難易度', value: `${difficultyEmoji} ${difficulty}`, inline: true }
+            )
+            .setColor(0x27AE60)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        
+    } catch (error) {
+        console.error('習慣追加エラー:', error);
+        await interaction.reply({ 
+            content: '❌ 習慣の追加中にエラーが発生しました。', 
+            ephemeral: true 
+        });
+    }
+}
 
-    const nameInput = new TextInputBuilder()
-        .setCustomId('habit_name')
-        .setLabel('習慣名')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: 朝の散歩、読書、瞑想')
-        .setRequired(true)
-        .setMaxLength(50);
-
-    const frequencyInput = new TextInputBuilder()
-        .setCustomId('habit_frequency')
-        .setLabel('頻度')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('daily, weekly, custom')
-        .setRequired(true)
-        .setMaxLength(20);
-
-    const difficultyInput = new TextInputBuilder()
-        .setCustomId('habit_difficulty')
-        .setLabel('難易度')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('easy, normal, hard')
-        .setRequired(true)
-        .setMaxLength(20);
-
-    const nameRow = new ActionRowBuilder().addComponents(nameInput);
-    const frequencyRow = new ActionRowBuilder().addComponents(frequencyInput);
-    const difficultyRow = new ActionRowBuilder().addComponents(difficultyInput);
-
-    modal.addComponents(nameRow, frequencyRow, difficultyRow);
+// 週次目標設定の処理
+async function handleWeeklyGoalsSubmit(interaction) {
+    const goal = interaction.fields.getTextInputValue('weekly_goal');
     
-    await interaction.showModal(modal);
+    const { EmbedBuilder } = require('discord.js');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('🎯 今週の目標を設定しました')
+        .setDescription(goal)
+        .addFields(
+            { name: '💪 頑張りましょう！', value: '小さな一歩が大きな変化を生みます', inline: false }
+        )
+        .setColor(0x27AE60)
+        .setTimestamp();
+    
+    await interaction.reply({ embeds: [embed] });
+    
+    console.log(`週次目標設定: ${interaction.user.id} - ${goal}`);
+}
+
+// bot.js - 修正版 Part 12: ハンドラー関数2・UI表示関数
+
+// クイック完了セレクト処理
+async function handleQuickDoneSelect(interaction) {
+    const habitId = interaction.values[0];
+    
+    try {
+        const userId = interaction.user.id;
+        const today = require('moment')().format('YYYY-MM-DD');
+        
+        // 習慣ログを保存
+        await sheetsUtils.saveHabitLog(userId, habitId, today);
+        
+        // 習慣情報を取得
+        const habit = await sheetsUtils.getHabitById(habitId);
+        
+        const { EmbedBuilder } = require('discord.js');
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎉 習慣を完了しました！')
+            .setDescription(`**${habit.name}** を実行しました`)
+            .addFields(
+                { name: '実行日', value: today, inline: true },
+                { name: '継続中', value: '素晴らしいです！', inline: true }
+            )
+            .setColor(0x3498DB);
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('quick_done')
+                    .setLabel('習慣を完了')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('✅'),
+                new ButtonBuilder()
+                    .setCustomId('add_habit')
+                    .setLabel('習慣を追加')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('➕')
+            );
+
+        await interaction.reply({
+            embeds: [embed],
+            components: [row],
+        });
+
+    } catch (error) {
+        console.error('習慣一覧表示エラー:', error);
+        await interaction.reply({
+            content: '❌ 習慣一覧の取得中にエラーが発生しました。',
+            ephemeral: true
+        });
+    }
+}
+
+// 週次統計表示
+async function showWeeklyStats(interaction) {
+    const { EmbedBuilder } = require('discord.js');
+    const moment = require('moment');
+    
+    const lastWeekEnd = moment().subtract(1, 'day').endOf('isoWeek');
+    const lastWeekStart = lastWeekEnd.clone().startOf('isoWeek');
+    
+    try {
+        const userId = interaction.user.id;
+        
+        const weightEntries = await sheetsUtils.getWeightEntriesInRange(
+            userId, 
+            lastWeekStart.format('YYYY-MM-DD'), 
+            lastWeekEnd.format('YYYY-MM-DD')
+        );
+        
+        const diaryEntries = await sheetsUtils.getDiaryEntriesInRange(
+            userId, 
+            lastWeekStart.format('YYYY-MM-DD'), 
+            lastWeekEnd.format('YYYY-MM-DD')
+        );
+        
+        const habitLogs = await sheetsUtils.getHabitLogsInRange(
+            userId, 
+            lastWeekStart.format('YYYY-MM-DD'), 
+            lastWeekEnd.format('YYYY-MM-DD')
+        );
+        
+        const embed = new EmbedBuilder()
+            .setTitle('📊 週次統計')
+            .setDescription(`${lastWeekStart.format('MM/DD')} - ${lastWeekEnd.format('MM/DD')}`)
+            .addFields(
+                { name: '⚖️ 体重記録', value: `${weightEntries.length}/7日`, inline: true },
+                { name: '📝 日記', value: `${diaryEntries.length}/7日`, inline: true },
+                { name: '🏃‍♂️ 習慣', value: `${habitLogs.length}回実行`, inline: true }
+            )
+            .setColor(0x3498DB)
+            .setTimestamp();
+        
+        if (weightEntries.length >= 2) {
+            const firstWeight = parseFloat(weightEntries[0].weight);
+            const lastWeight = parseFloat(weightEntries[weightEntries.length - 1].weight);
+            const change = lastWeight - firstWeight;
+            const changeText = change >= 0 ? `+${change.toFixed(1)}kg` : `${change.toFixed(1)}kg`;
+            
+            embed.addFields({ name: '📈 体重変化', value: changeText, inline: true });
+        }
+        
+        await interaction.reply({ embeds: [embed] });
+        
+    } catch (error) {
+        console.error('週次統計エラー:', error);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('📊 週次統計')
+            .setDescription(`${lastWeekStart.format('MM/DD')} - ${lastWeekEnd.format('MM/DD')}`)
+            .addFields(
+                { name: '📈 統計情報', value: 'データを取得中にエラーが発生しました', inline: false }
+            )
+            .setColor(0xE74C3C)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+// ===== 日記目標関連のプレースホルダー関数（実装は他ファイルに委譲） =====
+async function handleDiaryGoalFrequency(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryGoalMood(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryGoalReview(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryGoalProgressButton(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryReviewSave(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryReviewShare(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryGoalFrequencySubmit(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryGoalMoodSubmit(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+async function handleDiaryGoalReviewSubmit(interaction) {
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
+}
+
+// 旧日記モーダル処理（削除予定）
+async function handleDiarySubmit(interaction) {
+    console.log('⚠️ 旧日記モーダルが使用されました。新しい気分選択フローに移行してください。');
+    // 実装は commands/diary.js に委譲
+    await interactionHandler.handleInteraction(interaction);
 }
 
 // 習慣クイック完了選択
@@ -1671,7 +1921,6 @@ async function showHabitQuickDoneSelect(interaction) {
     
     try {
         const userId = interaction.user.id;
-        const sheetsUtils = require('./utils/sheets');
         const habits = await sheetsUtils.getUserHabits(userId);
         
         if (habits.length === 0) {
@@ -1736,7 +1985,6 @@ async function showHabitListMessage(interaction) {
     
     try {
         const userId = interaction.user.id;
-        const sheetsUtils = require('./utils/sheets');
         const habits = await sheetsUtils.getUserHabits(userId);
         
         if (habits.length === 0) {
@@ -1769,7 +2017,6 @@ async function showHabitListMessage(interaction) {
                 { name: '📅 日付', value: today, inline: true }
             )
             .setColor(0x3498DB);
-
         const row = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
@@ -1798,234 +2045,10 @@ async function showHabitListMessage(interaction) {
     }
 }
 
-// 週次統計表示
-async function showWeeklyStats(interaction) {
-    const { EmbedBuilder } = require('discord.js');
-    const moment = require('moment');
-    
-    const lastWeekEnd = moment().subtract(1, 'day').endOf('isoWeek');
-    const lastWeekStart = lastWeekEnd.clone().startOf('isoWeek');
-    
-    try {
-        const userId = interaction.user.id;
-        const sheetsUtils = require('./utils/sheets');
-        
-        const weightEntries = await sheetsUtils.getWeightEntriesInRange(
-            userId, 
-            lastWeekStart.format('YYYY-MM-DD'), 
-            lastWeekEnd.format('YYYY-MM-DD')
-        );
-        
-        const diaryEntries = await sheetsUtils.getDiaryEntriesInRange(
-            userId, 
-            lastWeekStart.format('YYYY-MM-DD'), 
-            lastWeekEnd.format('YYYY-MM-DD')
-        );
-        
-        const habitLogs = await sheetsUtils.getHabitLogsInRange(
-            userId, 
-            lastWeekStart.format('YYYY-MM-DD'), 
-            lastWeekEnd.format('YYYY-MM-DD')
-        );
-        
-        const embed = new EmbedBuilder()
-            .setTitle('📊 週次統計')
-            .setDescription(`${lastWeekStart.format('MM/DD')} - ${lastWeekEnd.format('MM/DD')}`)
-            .addFields(
-                { name: '⚖️ 体重記録', value: `${weightEntries.length}/7日`, inline: true },
-                { name: '📝 日記', value: `${diaryEntries.length}/7日`, inline: true },
-                { name: '🏃‍♂️ 習慣', value: `${habitLogs.length}回実行`, inline: true }
-            )
-            .setColor(0x3498DB)
-            .setTimestamp();
-        
-        if (weightEntries.length >= 2) {
-            const firstWeight = parseFloat(weightEntries[0].weight);
-            const lastWeight = parseFloat(weightEntries[weightEntries.length - 1].weight);
-            const change = lastWeight - firstWeight;
-            const changeText = change >= 0 ? `+${change.toFixed(1)}kg` : `${change.toFixed(1)}kg`;
-            
-            embed.addFields({ name: '📈 体重変化', value: changeText, inline: true });
-        }
-        
-        await interaction.reply({ embeds: [embed] });
-        
-    } catch (error) {
-        console.error('週次統計エラー:', error);
-        
-        const embed = new EmbedBuilder()
-            .setTitle('📊 週次統計')
-            .setDescription(`${lastWeekStart.format('MM/DD')} - ${lastWeekEnd.format('MM/DD')}`)
-            .addFields(
-                { name: '📈 統計情報', value: 'データを取得中にエラーが発生しました', inline: false }
-            )
-            .setColor(0xE74C3C)
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-}
 
-// 週次目標設定モーダル
-async function showWeeklyGoalsModal(interaction) {
-    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-    
-    const modal = new ModalBuilder()
-        .setCustomId('weekly_goals_modal')
-        .setTitle('今週の目標設定');
+// bot.js - 修正版 Part 13: プロセス終了処理・ログイン
 
-    const goalInput = new TextInputBuilder()
-        .setCustomId('weekly_goal')
-        .setLabel('今週の目標')
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('例: 毎日運動する、体重を1kg減らす、日記を5日書く')
-        .setRequired(true)
-        .setMaxLength(500);
-
-    const goalRow = new ActionRowBuilder().addComponents(goalInput);
-    modal.addComponents(goalRow);
-    
-    await interaction.showModal(modal);
-}
-
-// 週次目標設定の処理
-async function handleWeeklyGoalsSubmit(interaction) {
-    const goal = interaction.fields.getTextInputValue('weekly_goal');
-    
-    const { EmbedBuilder } = require('discord.js');
-    
-    const embed = new EmbedBuilder()
-        .setTitle('🎯 今週の目標を設定しました')
-        .setDescription(goal)
-        .addFields(
-            { name: '💪 頑張りましょう！', value: '小さな一歩が大きな変化を生みます', inline: false }
-        )
-        .setColor(0x27AE60)
-        .setTimestamp();
-    
-    await interaction.reply({ embeds: [embed] });
-    
-    console.log(`週次目標設定: ${interaction.user.id} - ${goal}`);
-}
-
-// 習慣追加モーダル送信処理
-async function handleAddHabitSubmit(interaction) {
-    const name = interaction.fields.getTextInputValue('habit_name');
-    const frequency = interaction.fields.getTextInputValue('habit_frequency');
-    const difficulty = interaction.fields.getTextInputValue('habit_difficulty');
-    
-    try {
-        const userId = interaction.user.id;
-        const sheetsUtils = require('./utils/sheets');
-        
-        // 習慣を保存
-        const habitId = await sheetsUtils.saveHabitToSheet(userId, name, frequency, difficulty);
-        
-        const { EmbedBuilder } = require('discord.js');
-        
-        const difficultyEmoji = difficulty === 'easy' ? '🟢' : difficulty === 'normal' ? '🟡' : '🔴';
-        
-        const embed = new EmbedBuilder()
-            .setTitle('✅ 習慣を追加しました')
-            .addFields(
-                { name: '習慣名', value: name, inline: true },
-                { name: '頻度', value: frequency, inline: true },
-                { name: '難易度', value: `${difficultyEmoji} ${difficulty}`, inline: true }
-            )
-            .setColor(0x27AE60)
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-        
-    } catch (error) {
-        console.error('習慣追加エラー:', error);
-        await interaction.reply({ 
-            content: '❌ 習慣の追加中にエラーが発生しました。', 
-            ephemeral: true 
-        });
-    }
-}
-
-// クイック完了セレクト処理
-async function handleQuickDoneSelect(interaction) {
-    const habitId = interaction.values[0];
-    
-    try {
-        const userId = interaction.user.id;
-        const today = require('moment')().format('YYYY-MM-DD');
-        const sheetsUtils = require('./utils/sheets');
-        
-        // 習慣ログを保存
-        await sheetsUtils.saveHabitLog(userId, habitId, today);
-        
-        // 習慣情報を取得
-        const habit = await sheetsUtils.getHabitById(habitId);
-        
-        const { EmbedBuilder } = require('discord.js');
-        
-        const embed = new EmbedBuilder()
-            .setTitle('🎉 習慣を完了しました！')
-            .setDescription(`**${habit.name}** を実行しました`)
-            .addFields(
-                { name: '実行日', value: today, inline: true },
-                { name: '継続中', value: '素晴らしいです！', inline: true }
-            )
-            .setColor(0x27AE60)
-            .setTimestamp();
-        
-        await interaction.update({
-            embeds: [embed],
-            components: []
-        });
-        
-    } catch (error) {
-        console.error('習慣完了エラー:', error);
-        await interaction.update({
-            content: '❌ 習慣の完了処理中にエラーが発生しました。',
-            embeds: [],
-            components: []
-        });
-    }
-}
-
-// goals専用のカレンダーナビゲーション処理
-async function handleGoalsCalendarNavigation(interaction) {
-    const customId = interaction.customId;
-    
-    // goals_calendar_2025_1 形式からyearとmonthを抽出
-    const parts = customId.split('_');
-    if (parts.length >= 4) {
-        const year = parseInt(parts[2]);
-        const month = parseInt(parts[3]);
-        
-        // 🔄 この行を修正
-        const currentYear = new Date().getFullYear();
-        const maxYear = currentYear + 10;
-        
-        if (!isNaN(year) && !isNaN(month) && year >= 2020 && year <= maxYear && month >= 1 && month <= 12) {
-            await showGoalsCalendar(interaction, year, month);
-        } else {
-            await interaction.editReply({ 
-                content: '❌ 無効な日付です。', 
-                embeds: [],
-                components: []
-            });
-        }
-    } else {
-        await interaction.editReply({ 
-            content: '❌ カレンダーナビゲーションエラー。', 
-            embeds: [],
-            components: []
-        });
-    }
-}
-
-// その他の関数は既存のものをそのまま使用...
-// (handleDiaryGoalFrequency, handleDiaryGoalMood, handleDiaryGoalReview, 
-//  handleDiaryGoalFrequencySubmit, handleDiaryGoalMoodSubmit, handleDiaryGoalReviewSubmit,
-//  handleDiaryGoalProgressButton, handleDiaryReviewSave, handleDiaryReviewShare など)
-
-// プロセス終了時の処理
+// ===== プロセス終了時の処理 =====
 process.on('SIGINT', () => {
     console.log('Botを停止中...');
     
@@ -2068,5 +2091,15 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
-// ログイン
+// ===== ログイン =====
 client.login(process.env.DISCORD_TOKEN);
+
+// ===== エクスポート（テスト用） =====
+module.exports = {
+    client,
+    // テスト用の関数エクスポート（必要に応じて）
+    showQuickWeightModal,
+    showDiaryModal,
+    showAddHabitModal,
+    showWeeklyGoalsModal
+};
