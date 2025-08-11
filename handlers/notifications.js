@@ -30,22 +30,22 @@ class NotificationManager {
 // 定期通知のスケジュール設定
     scheduleNotifications() {
         // 1. 毎日7:30 - 体重記録リマインダー
-        const weightReminderJob = cron.schedule('30 7 * * *', () => {
-            this.sendWeightReminder();
-        }, {
-            scheduled: true,
-            timezone: 'Asia/Tokyo'
-        });
-        this.scheduledJobs.set('weight_reminder', weightReminderJob);
+        //const weightReminderJob = cron.schedule('30 7 * * *', () => {
+       //     this.sendWeightReminder();
+      //  }, {
+      //      scheduled: true,
+      //      timezone: 'Asia/Tokyo'
+      //  });
+      //  this.scheduledJobs.set('weight_reminder', weightReminderJob);
 
         // 2. 毎日21:00 - 日記リマインダー
-        const diaryReminderJob = cron.schedule('0 21 * * *', () => {
-            this.sendDiaryReminder();
-        }, {
-            scheduled: true,
-            timezone: 'Asia/Tokyo'
-        });
-        this.scheduledJobs.set('diary_reminder', diaryReminderJob);
+      //  const diaryReminderJob = cron.schedule('0 21 * * *', () => {
+      //      this.sendDiaryReminder();
+      //  }, {
+      //      scheduled: true,
+      //      timezone: 'Asia/Tokyo'
+      //  });
+      //  this.scheduledJobs.set('diary_reminder', diaryReminderJob);
 
         // 3. 毎朝9:00 - 習慣サマリー（現在は無効化）
         // const habitSummaryJob = cron.schedule('0 9 * * *', () => {
@@ -66,13 +66,13 @@ class NotificationManager {
         this.scheduledJobs.set('weekly_report', weeklyReportJob);
 
         // 5. 毎朝7:00 - Who Am I リマインダー 🌟 ここに移動
-        const whoAmIReminderJob = cron.schedule('0 7 * * *', () => {
-            this.sendWhoAmIReminder();
-        }, {
-            scheduled: true,
-            timezone: 'Asia/Tokyo'
-        });
-        this.scheduledJobs.set('whoami_reminder', whoAmIReminderJob);
+       // const whoAmIReminderJob = cron.schedule('0 7 * * *', () => {
+      //      this.sendWhoAmIReminder();
+      //  }, {
+      //      scheduled: true,
+     //       timezone: 'Asia/Tokyo'
+     //   });
+     //   this.scheduledJobs.set('whoami_reminder', whoAmIReminderJob);
 
         console.log('📅 定期通知スケジュールを設定しました');
     }
@@ -329,44 +329,44 @@ class NotificationManager {
             }
 
             // 習慣サマリーを生成（現在はコメントアウト）
-            // let summaryText = '';
-            // let totalPendingHabits = 0;
+             let summaryText = '';
+             let totalPendingHabits = 0;
 
-            // for (const userId of activeHabitUsers) {
-            //     const userHabits = await sheetsUtils.getUserHabits(userId);
-            //     const todayLogs = await sheetsUtils.getHabitLogsForDate(userId, today);
+             for (const userId of activeHabitUsers) {
+                 const userHabits = await sheetsUtils.getUserHabits(userId);
+                 const todayLogs = await sheetsUtils.getHabitLogsForDate(userId, today);
                 
-            //     const pending = userHabits.filter(habit => 
-            //         !todayLogs.some(log => log.habitId === habit.id)
-            //     );
+                 const pending = userHabits.filter(habit => 
+                     !todayLogs.some(log => log.habitId === habit.id)
+                 );
                 
-            //     totalPendingHabits += pending.length;
-            // }
+                 totalPendingHabits += pending.length;
+             }
 
-            // const embed = new EmbedBuilder()
-            //     .setTitle('🏃‍♂️ 今日の習慣チェック')
-            //     .setDescription(`おはようございます！今日も習慣を続けて素晴らしい一日にしましょう`)
-            //     .addFields(
-            //         { name: '📊 今日の状況', value: `アクティブユーザー: ${activeHabitUsers.length}人\n未完了習慣: ${totalPendingHabits}個`, inline: false }
-            //     )
-            //     .setColor(0x3498DB)
-            //     .setTimestamp();
+             const embed = new EmbedBuilder()
+                 .setTitle('🏃‍♂️ 今日の習慣チェック')
+                 .setDescription(`おはようございます！今日も習慣を続けて素晴らしい一日にしましょう`)
+                 .addFields(
+                     { name: '📊 今日の状況', value: `アクティブユーザー: ${activeHabitUsers.length}人\n未完了習慣: ${totalPendingHabits}個`, inline: false }
+                 )
+                 .setColor(0x3498DB)
+                 .setTimestamp();
 
-            // const row = new ActionRowBuilder()
-            //     .addComponents(
-            //         new ButtonBuilder()
-            //             .setCustomId('quick_done')
-            //             .setLabel('習慣を完了')
-            //             .setStyle(ButtonStyle.Primary)
-            //             .setEmoji('✅'),
-            //         new ButtonBuilder()
-            //             .setCustomId('habit_list')
-            //             .setLabel('習慣一覧')
-            //             .setStyle(ButtonStyle.Secondary)
-            //             .setEmoji('📋')
-            //     );
+             const row = new ActionRowBuilder()
+                 .addComponents(
+                     new ButtonBuilder()
+                         .setCustomId('quick_done')
+                         .setLabel('習慣を完了')
+                         .setStyle(ButtonStyle.Primary)
+                         .setEmoji('✅'),
+                     new ButtonBuilder()
+                         .setCustomId('habit_list')
+                         .setLabel('習慣一覧')
+                         .setStyle(ButtonStyle.Secondary)
+                         .setEmoji('📋')
+               );
 
-            // await channel.send({ embeds: [embed], components: [row] });
+             await channel.send({ embeds: [embed], components: [row] });
 
         } catch (error) {
             console.error('習慣サマリーエラー:', error);
