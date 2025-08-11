@@ -648,449 +648,475 @@ async function sendEveningNotificationSet(channel, userId) {
 }
 
 // ===== インタラクション処理（修正版・defer問題解決） =====
+// ===== インタラクション処理（修正版・Part 1） =====
 client.on(Events.InteractionCreate, async interaction => {
-   try {
-       if (interaction.isChatInputCommand()) {
-           const { commandName } = interaction;
+    try {
+        // ===== スラッシュコマンド処理 =====
+        if (interaction.isChatInputCommand()) {
+            const { commandName } = interaction;
 
-           switch (commandName) {
-               case 'diary':
-                   await diaryCommands.handleCommand(interaction);
-                   break;
-               case 'habit':
-                   await habitCommands.handleCommand(interaction);
-                   break;
-               case 'weight':
-                   await weightCommands.handleCommand(interaction);
-                   break;
-               case 'goals':
-                   await goalsCommands.handleCommand(interaction);
-                   break;
-               case 'whoami':
-                   await whoamiCommands.handleCommand(interaction);
-                   break;
-               case 'test-notification':
-                   await handleTestNotification(interaction);
-                   break;
-               case 'routine':
-                   await routineCommands.handleCommand(interaction, routineHandler);
-                   break;
-           }
+            switch (commandName) {
+                case 'diary':
+                    await diaryCommands.handleCommand(interaction);
+                    break;
+                case 'habit':
+                    await habitCommands.handleCommand(interaction);
+                    break;
+                case 'weight':
+                    await weightCommands.handleCommand(interaction);
+                    break;
+                case 'goals':
+                    await goalsCommands.handleCommand(interaction);
+                    break;
+                case 'whoami':
+                    await whoamiCommands.handleCommand(interaction);
+                    break;
+                case 'test-notification':
+                    await handleTestNotification(interaction);
+                    break;
+                case 'routine':
+                    await routineCommands.handleCommand(interaction, routineHandler);
+                    break;
+            }
 
-       } else if (interaction.isButton()) {
-           // ボタンインタラクション処理
-           const customId = interaction.customId;
-           console.log('🔍 ボタンが押されました:', customId);
-           console.log('🔍 ユーザーID:', interaction.user.id);
-           
-           try {
-               // ===== ルーティンボタンは最初に処理（deferなし） =====
-               if (customId.startsWith('routine_') || 
-                   ['routine_next', 'routine_skip', 'routine_pause', 'routine_stop'].includes(customId)) {
-                   
-                   console.log('🔄 ルーティンボタンを検出:', customId);
-                   
-                   if (routineHandler) {
-                       console.log('✅ ルーティンハンドラーに処理を委譲');
-                       
-                       try {
-                           // routineHandlerで完全に処理（bot.jsではdeferしない）
-                           await routineHandler.handleButtonInteraction(interaction);
-                           console.log('✅ ルーティンボタン処理完了');
-                           return;
-                       } catch (routineError) {
-                           console.error('❌ ルーティンボタン処理エラー:', routineError);
-                           
-                           // エラーが発生した場合の応答
-                           try {
-                               if (!interaction.replied && !interaction.deferred) {
-                                   await interaction.reply({
-                                       content: '❌ ルーティン操作中にエラーが発生しました。',
-                                       ephemeral: true
-                                   });
-                               } else if (interaction.deferred) {
-                                   await interaction.editReply({
-                                       content: '❌ ルーティン操作中にエラーが発生しました。',
-                                       components: []
-                                   });
-                               }
-                           } catch (replyError) {
-                               console.error('エラーメッセージ送信失敗:', replyError);
-                           }
-                           return;
-                       }
-                   } else {
-                       console.log('❌ ルーティンハンドラーが見つかりません');
-                       try {
-                           await interaction.reply({
-                               content: '❌ ルーティンハンドラーが初期化されていません。',
-                               ephemeral: true
-                           });
-                       } catch (replyError) {
-                           console.error('エラーメッセージ送信失敗:', replyError);
-                       }
-                       return;
-                   }
-               }
+        // ===== ボタンインタラクション処理 =====
+        } else if (interaction.isButton()) {
+            const customId = interaction.customId;
+            console.log('🔍 ボタンが押されました:', customId);
+            console.log('🔍 ユーザーID:', interaction.user.id);
+            
+            try {
+                // ===== モーダル表示系ボタン（deferなし・最優先） =====
+                
+                // ルーティンボタン処理
+                if (customId.startsWith('routine_') || 
+                    ['routine_next', 'routine_skip', 'routine_pause', 'routine_stop'].includes(customId)) {
+                    
+                    console.log('🔄 ルーティンボタンを検出:', customId);
+                    
+                    if (routineHandler) {
+                        console.log('✅ ルーティンハンドラーに処理を委譲');
+                        
+                        try {
+                            await routineHandler.handleButtonInteraction(interaction);
+                            console.log('✅ ルーティンボタン処理完了');
+                            return;
+                        } catch (routineError) {
+                            console.error('❌ ルーティンボタン処理エラー:', routineError);
+                            
+                            try {
+                                if (!interaction.replied && !interaction.deferred) {
+                                    await interaction.reply({
+                                        content: '❌ ルーティン操作中にエラーが発生しました。',
+                                        ephemeral: true
+                                    });
+                                } else if (interaction.deferred) {
+                                    await interaction.editReply({
+                                        content: '❌ ルーティン操作中にエラーが発生しました。',
+                                        components: []
+                                    });
+                                }
+                            } catch (replyError) {
+                                console.error('エラーメッセージ送信失敗:', replyError);
+                            }
+                            return;
+                        }
+                    } else {
+                        console.log('❌ ルーティンハンドラーが見つかりません');
+                        try {
+                            await interaction.reply({
+                                content: '❌ ルーティンハンドラーが初期化されていません。',
+                                ephemeral: true
+                            });
+                        } catch (replyError) {
+                            console.error('エラーメッセージ送信失敗:', replyError);
+                        }
+                        return;
+                    }
+                }
 
-               // ===== Who Am Iボタンも最初に処理（deferなし） =====
-               if (customId.startsWith('whoami_') || customId === 'whoami_setup_start') {
-                   console.log('🌟 Who Am I ボタンを検出:', customId);
-                   await whoamiCommands.handleButtonInteraction(interaction);
-                   return;
-               }
+                // Who Am I ボタン処理
+                if (customId.startsWith('whoami_') || customId === 'whoami_setup_start') {
+                    console.log('🌟 Who Am I ボタンを検出:', customId);
+                    await whoamiCommands.handleButtonInteraction(interaction);
+                    return;
+                }
 
-               // ===== 体重記録ボタンも最初に処理（deferなし、modalのため） =====
-               if (customId.startsWith('weight_record_')) {
-                   const userId = customId.replace('weight_record_', '');
-                   if (interaction.user.id === userId) {
-                       await showQuickWeightModal(interaction);
-                   } else {
-                       await interaction.reply({ 
-                           content: 'これはあなた向けのリマインダーではありません。',
-                           ephemeral: true
-                       });
-                   }
-                   return;
-               }
+                // 体重記録ボタン処理（個人用）
+                if (customId.startsWith('weight_record_')) {
+                    console.log('⚖️ 体重記録ボタンを検出:', customId);
+                    const userId = customId.replace('weight_record_', '');
+                    if (interaction.user.id === userId) {
+                        await showQuickWeightModal(interaction);
+                    } else {
+                        await interaction.reply({ 
+                            content: 'これはあなた向けのリマインダーではありません。',
+                            ephemeral: true
+                        });
+                    }
+                    return;
+                }
 
-               // ===== 日記書くボタンの修正 =====
-               if (customId === 'diary_write_start') {
-                   console.log('📝 日記書くボタンを検出');
-                   await showDiaryModal(interaction);
-                   return;
-               }
+                // 日記書くボタン処理
+                if (customId === 'diary_write_start') {
+                    console.log('📝 日記書くボタンを検出');
+                    await showDiaryModal(interaction);
+                    return;
+                }
 
-               // 🔔 Habit通知関連のボタン処理
-               if (customId.startsWith('habit_quick_done_') || 
-                   customId.startsWith('habit_snooze_') ||
-                   customId === 'habit_calendar_view' ||
-                   customId === 'habit_new_month_goals') {
-                   
-                   console.log('🔔 Habit通知ボタンを検出:', customId);
-                   
-                   if (habitNotificationsHandler) {
-                       console.log('✅ Habit通知ハンドラーに処理を委譲');
-                       await habitNotificationsHandler.handleButtonInteraction(interaction);
-                       console.log('✅ Habit通知ボタン処理完了');
-                       return;
-                   } else {
-                       console.log('❌ Habit通知ハンドラーが見つかりません');
-                       await interaction.reply({
-                           content: '❌ Habit通知ハンドラーが初期化されていません。',
-                           ephemeral: true
-                       });
-                       return;
-                   }
-               }
+                // クイック体重記録ボタン（全体用）
+                if (customId === 'quick_weight_record') {
+                    console.log('⚖️ クイック体重記録ボタンを検出');
+                    await showQuickWeightModal(interaction);
+                    return;
+                }
+                
+                // 日記を書くボタン（全体用）
+                if (customId === 'write_diary') {
+                    console.log('📝 日記を書くボタンを検出');
+                    await showDiaryModal(interaction);
+                    return;
+                }
+                
+                // 習慣追加ボタン
+                if (customId === 'add_habit') {
+                    console.log('🏃‍♂️ 習慣追加ボタンを検出');
+                    await showAddHabitModal(interaction);
+                    return;
+                }
 
-               // ===== その他のボタンはdeferしてから処理 =====
-               if (!interaction.deferred && !interaction.replied) {
-                   if (customId.includes('quick_done') || customId.includes('snooze')) {
-                       await interaction.deferUpdate();
-                   } else {
-                       await interaction.deferReply({ ephemeral: true });
-                   }
-               }
-               
-               // 🌅 起床通知のスキップボタン処理
-               if (customId === 'whoami_skip') {
-                   await interaction.editReply({
-                       content: '⏭️ Who Am I をスキップしました。今日も良い一日を！',
-                       embeds: [],
-                       components: []
-                   });
-                   return;
-               } else if (customId === 'weight_skip') {
-                   await interaction.editReply({
-                       content: '⏭️ 体重記録を後回しにしました。忘れずに記録してくださいね！',
-                       embeds: [],
-                       components: []
-                   });
-                   return;
-               } else if (customId === 'routine_later') {
-                   await interaction.editReply({
-                       content: '⏭️ ルーティンを後で実行します。お疲れ様でした！',
-                       embeds: [],
-                       components: []
-                   });
-                   return;
-               } else if (customId === 'diary_skip') {
-                   await interaction.editReply({
-                       content: '⏭️ 日記を後で書きます。今日もお疲れ様でした！',
-                       embeds: [],
-                       components: []
-                   });
-                   return;
-               }
-               
-               // 🎯 統合目標ダッシュボードのボタン処理
-               if (customId === 'goals_dashboard') {
-                   // ダッシュボードに戻るボタン
-                   if (!interaction.deferred) await interaction.deferUpdate();
-                   await goalsCommands.handleGoalsDashboard(interaction);
-                   
-               } else if (customId === 'goals_refresh') {
-                   // 更新ボタン（現在のページを再表示）
-                   if (!interaction.deferred) await interaction.deferUpdate();
-                   
-                   // 現在表示中のページを判定して適切な関数を呼び出し
-                   const embed = interaction.message.embeds[0];
-                   const title = embed?.title || '';
-                   
-                   if (title.includes('統合目標ダッシュボード')) {
-                       await goalsCommands.handleGoalsDashboard(interaction);
-                   } else if (title.includes('達成バッジ・実績')) {
-                       await goalsCommands.handleGoalsAchievements(interaction);
-                   } else if (title.includes('目標達成カレンダー')) {
-                       await goalsCommands.handleGoalsCalendar(interaction);
-                   } else {
-                       // デフォルトはダッシュボード
-                       await goalsCommands.handleGoalsDashboard(interaction);
-                   }
-                   
-               } else if (customId === 'goals_achievements') {
-                   // 実績表示ボタン（ダッシュボードから）
-                   if (!interaction.deferred) await interaction.deferUpdate();
-                   await goalsCommands.handleGoalsAchievements(interaction);
-                   
-               } else if (customId === 'goals_calendar') {
-                   // カレンダー表示ボタン（ダッシュボードから）
-                   console.log('🔍 goals_calendarボタンが押されました');
-                   
-                   try {
-                       if (!interaction.deferred && !interaction.replied) {
-                           console.log('🔄 deferUpdateを実行中...');
-                           await interaction.deferUpdate();
-                       }
-                       
-                       console.log('📅 goalsCommands.handleGoalsCalendarを呼び出し中...');
-                       await goalsCommands.handleGoalsCalendar(interaction);
-                       console.log('✅ カレンダー表示完了');
-                       
-                   } catch (error) {
-                       console.error('❌ goals_calendarボタンエラー:', error);
-                       
-                       try {
-                           if (interaction.deferred) {
-                               await interaction.editReply({ 
-                                   content: '❌ カレンダーの表示中にエラーが発生しました。', 
-                                   embeds: [],
-                                   components: []
-                               });
-                           } else if (!interaction.replied) {
-                               await interaction.reply({ 
-                                   content: '❌ カレンダーの表示中にエラーが発生しました。', 
-                                   ephemeral: true
-                               });
-                           }
-                       } catch (replyError) {
-                           console.error('エラーメッセージ送信失敗:', replyError);
-                       }
-                   }
-                   
-               } else if (customId.startsWith('goals_calendar_') && customId !== 'goals_calendar_today') {
-                   // カレンダーナビゲーション処理（前月/次月）
-                   if (!interaction.deferred) await interaction.deferUpdate();
-                   await handleGoalsCalendarNavigation(interaction);
-                   
-               } else if (customId === 'goals_calendar_today') {
-                   // 今月に戻るボタン
-                   if (!interaction.deferred) await interaction.deferUpdate();
-                   const today = new Date();
-                   const year = today.getFullYear();
-                   const month = today.getMonth() + 1;
-                   await showGoalsCalendar(interaction, year, month);
-                   
-               // 既存のボタン処理
-               } else if (customId === 'quick_weight_record') {
-                   // クイック体重記録のモーダルを表示
-                   await showQuickWeightModal(interaction);
-                   
-               } else if (customId === 'write_diary') {
-                   // 日記書くボタン - モーダルを直接表示
-                   await showDiaryModal(interaction);
-                   
-               } else if (customId === 'add_habit') {
-                   // 習慣追加ボタン - モーダルを直接表示
-                   await showAddHabitModal(interaction);
-                   
-               } else if (customId === 'quick_done') {
-                   // 習慣完了ボタン - 習慣一覧を表示
-                   await showHabitQuickDoneSelect(interaction);
-                   
-               } else if (customId === 'habit_list') {
-                   // 習慣一覧ボタン - 習慣一覧を表示
-                   await showHabitListMessage(interaction);
-                   
-               } else if (customId === 'view_weekly_stats') {
-                   // 週次統計を表示
-                   await showWeeklyStats(interaction);
-                   
-               } else if (customId === 'set_weekly_goals') {
-                   // 週次目標設定
-                   await showWeeklyGoalsModal(interaction);
-                   
-               } else if (customId.startsWith('habit_delete_confirm_')) {
-                   // 習慣削除確認
-                   const habitId = customId.replace('habit_delete_confirm_', '');
-                   await habitCommands.executeHabitDelete(interaction, habitId);
-                   
-               } else if (customId === 'habit_delete_cancel') {
-                   // 習慣削除キャンセル
-                   await interaction.update({ 
-                       content: '削除をキャンセルしました。',
-                       embeds: [],
-                       components: []
-                   });
-                   
-               } else if (customId.startsWith('calendar_')) {
-                   // カレンダーナビゲーション処理（習慣用）
-                   await habitCommands.handleCalendarNavigation(interaction);
-                   
-               } else if (customId === 'diary_goal_frequency') {
-                   await handleDiaryGoalFrequency(interaction);
-                   
-               } else if (customId === 'diary_goal_mood') {
-                   await handleDiaryGoalMood(interaction);
-                   
-               } else if (customId === 'diary_goal_review') {
-                   await handleDiaryGoalReview(interaction);
-                   
-               } else if (customId === 'diary_goal_progress_button') {
-                   await handleDiaryGoalProgressButton(interaction);
-                   
-               } else if (customId === 'diary_review_save') {
-                   // 振り返り保存ボタン
-                   await handleDiaryReviewSave(interaction);
-                   
-               } else if (customId === 'diary_review_share') {
-                   // 振り返り詳細表示ボタン
-                   await handleDiaryReviewShare(interaction);
-                   
-               } else {
-                   // 既存のボタン処理（日記、習慣など）
-                   await interactionHandler.handleInteraction(interaction);
-               }
-               
-           } catch (error) {
-               console.error('ボタン処理エラー:', error);
-               try {
-                   if (interaction.deferred) {
-                       await interaction.editReply({ 
-                           content: 'ボタン処理中にエラーが発生しました。',
-                           components: []
-                       });
-                   } else if (!interaction.replied) {
-                       await interaction.reply({ 
-                           content: 'ボタン処理中にエラーが発生しました。', 
-                           ephemeral: true
-                       });
-                   }
-               } catch (replyError) {
-                   console.error('エラーメッセージ送信失敗:', replyError);
-               }
-           }
-       // bot.js - 修正版 Part 8: セレクトメニュー・モーダル処理
+                // ===== 🎯 週次目標設定ボタン（修正版・deferなし） =====
+                if (customId === 'set_weekly_goals') {
+                    console.log('🎯 週次目標設定ボタンを検出');
+                    await showWeeklyGoalsModal(interaction);
+                    return;
+                }
 
-       } else if (interaction.isStringSelectMenu()) {
-           const customId = interaction.customId;
-           
-           try {
-               if (customId === 'habit_done_select') {
-                   // 習慣完了選択
-                   await habitCommands.handleHabitDoneSelect(interaction);
-               } else if (customId === 'habit_edit_select') {
-                   // 習慣編集選択
-                   await habitCommands.handleHabitEditSelect(interaction);
-               } else if (customId === 'habit_delete_select') {
-                   // 習慣削除選択
-                   await habitCommands.handleHabitDeleteSelect(interaction);
-               } else if (customId === 'quick_done_select') {
-                   // クイック完了選択
-                   await handleQuickDoneSelect(interaction);
-               } else if (customId === 'diary_mood_first_select') {
-                   // 日記気分選択（最初）
-                   await handleDiaryMoodFirstSelect(interaction);
-               } else if (customId === 'diary_content_modal') {
-                   await handleDiaryContentSubmit(interaction);
-               } else {
-                   // 既存のセレクトメニュー処理
-                   await interactionHandler.handleInteraction(interaction);
-               }
-           } catch (error) {
-               console.error('セレクトメニュー処理エラー:', error);
-               if (!interaction.replied && !interaction.deferred) {
-                   await interaction.reply({ 
-                       content: 'セレクトメニュー処理中にエラーが発生しました。', 
-                       ephemeral: true
-                   });
-               }
-           }
-           
-       } else if (interaction.isModalSubmit()) {
-           const customId = interaction.customId;
-           
-           try {
-               // Who Am I モーダル処理
-               if (customId.startsWith('whoami_edit_')) {
-                   const handled = await whoamiCommands.handleModalSubmit(interaction);
-                   if (handled) return;
-               }
-               
-               // 既存のモーダル処理
-               if (customId === 'quick_weight_modal') {
-                   // クイック体重記録の処理
-                   await handleQuickWeightSubmit(interaction);
-               } else if (customId === 'weekly_goals_modal') {
-                   // 週次目標設定の処理
-                   await handleWeeklyGoalsSubmit(interaction);
-               } else if (customId === 'diary_modal') {
-                   // 旧日記モーダル（削除予定）
-                   await handleDiarySubmit(interaction);
-               } else if (customId === 'diary_content_modal') {
-                   // 新日記本文モーダル
-                   await handleDiaryContentSubmit(interaction);
-               } else if (customId === 'add_habit_modal') {
-                   // 習慣追加モーダルの処理
-                   await handleAddHabitSubmit(interaction);
-               } else if (customId.startsWith('habit_edit_modal_')) {
-                   // 習慣編集モーダル
-                   const habitId = customId.replace('habit_edit_modal_', '');
-                   await habitCommands.saveHabitEdit(interaction, habitId);
-               } else if (customId === 'diary_goal_frequency_modal') {
-                   await handleDiaryGoalFrequencySubmit(interaction);
-               } else if (customId === 'diary_goal_mood_modal') {
-                   await handleDiaryGoalMoodSubmit(interaction);
-               } else if (customId === 'diary_goal_review_modal') {
-                   await handleDiaryGoalReviewSubmit(interaction);
-               } else {
-                   // 既存のモーダル処理（日記、習慣など）
-                   await interactionHandler.handleInteraction(interaction);
-               }
-           } catch (error) {
-               console.error('モーダル処理エラー:', error);
-               if (!interaction.replied && !interaction.deferred) {
-                   await interaction.reply({ 
-                       content: 'モーダル処理中にエラーが発生しました。', 
-                       ephemeral: true
-                   });
-               }
-           }
-           
-       } else {
-           // その他のインタラクション
-           await interactionHandler.handleInteraction(interaction);
-       }
-   } catch (error) {
-       console.error('インタラクション処理エラー:', error);
-       if (!interaction.replied && !interaction.deferred) {
-           await interaction.reply({ 
-               content: 'エラーが発生しました。しばらく後にもう一度お試しください。', 
-               ephemeral: true
-           });
-       }
-   }
+                // 🔔 Habit通知関連のボタン処理
+                if (customId.startsWith('habit_quick_done_') || 
+                    customId.startsWith('habit_snooze_') ||
+                    customId === 'habit_calendar_view' ||
+                    customId === 'habit_new_month_goals') {
+                    
+                    console.log('🔔 Habit通知ボタンを検出:', customId);
+                    
+                    if (habitNotificationsHandler) {
+                        console.log('✅ Habit通知ハンドラーに処理を委譲');
+                        await habitNotificationsHandler.handleButtonInteraction(interaction);
+                        console.log('✅ Habit通知ボタン処理完了');
+                        return;
+                    } else {
+                        console.log('❌ Habit通知ハンドラーが見つかりません');
+                        await interaction.reply({
+                            content: '❌ Habit通知ハンドラーが初期化されていません。',
+                            ephemeral: true
+                        });
+                        return;
+                    }
+                }
+
+                // ===== ここ以降のボタンはdeferしてから処理 =====
+                if (!interaction.deferred && !interaction.replied) {
+                    if (customId.includes('quick_done') || customId.includes('snooze')) {
+                        await interaction.deferUpdate();
+                    } else {
+                        await interaction.deferReply({ ephemeral: true });
+                    }
+                }
+
+                // ===== Part 2: スキップボタン処理 =====
+                
+                // 🌅 起床通知のスキップボタン処理
+                if (customId === 'whoami_skip') {
+                    await interaction.editReply({
+                        content: '⏭️ Who Am I をスキップしました。今日も良い一日を！',
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                } else if (customId === 'weight_skip') {
+                    await interaction.editReply({
+                        content: '⏭️ 体重記録を後回しにしました。忘れずに記録してくださいね！',
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                } else if (customId === 'routine_later') {
+                    await interaction.editReply({
+                        content: '⏭️ ルーティンを後で実行します。お疲れ様でした！',
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                } else if (customId === 'diary_skip') {
+                    await interaction.editReply({
+                        content: '⏭️ 日記を後で書きます。今日もお疲れ様でした！',
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+                
+                // ===== 🎯 統合目標ダッシュボードのボタン処理 =====
+                if (customId === 'goals_dashboard') {
+                    // ダッシュボードに戻るボタン
+                    if (!interaction.deferred) await interaction.deferUpdate();
+                    await goalsCommands.handleGoalsDashboard(interaction);
+                    
+                } else if (customId === 'goals_refresh') {
+                    // 更新ボタン（現在のページを再表示）
+                    if (!interaction.deferred) await interaction.deferUpdate();
+                    
+                    // 現在表示中のページを判定して適切な関数を呼び出し
+                    const embed = interaction.message.embeds[0];
+                    const title = embed?.title || '';
+                    
+                    if (title.includes('統合目標ダッシュボード')) {
+                        await goalsCommands.handleGoalsDashboard(interaction);
+                    } else if (title.includes('達成バッジ・実績')) {
+                        await goalsCommands.handleGoalsAchievements(interaction);
+                    } else if (title.includes('目標達成カレンダー')) {
+                        await goalsCommands.handleGoalsCalendar(interaction);
+                    } else {
+                        // デフォルトはダッシュボード
+                        await goalsCommands.handleGoalsDashboard(interaction);
+                    }
+                    
+                } else if (customId === 'goals_achievements') {
+                    // 実績表示ボタン（ダッシュボードから）
+                    if (!interaction.deferred) await interaction.deferUpdate();
+                    await goalsCommands.handleGoalsAchievements(interaction);
+                    
+                } else if (customId === 'goals_calendar') {
+                    // カレンダー表示ボタン（ダッシュボードから）
+                    console.log('🔍 goals_calendarボタンが押されました');
+                    
+                    try {
+                        if (!interaction.deferred && !interaction.replied) {
+                            console.log('🔄 deferUpdateを実行中...');
+                            await interaction.deferUpdate();
+                        }
+                        
+                        console.log('📅 goalsCommands.handleGoalsCalendarを呼び出し中...');
+                        await goalsCommands.handleGoalsCalendar(interaction);
+                        console.log('✅ カレンダー表示完了');
+                        
+                    } catch (error) {
+                        console.error('❌ goals_calendarボタンエラー:', error);
+                        
+                        try {
+                            if (interaction.deferred) {
+                                await interaction.editReply({ 
+                                    content: '❌ カレンダーの表示中にエラーが発生しました。', 
+                                    embeds: [],
+                                    components: []
+                                });
+                            } else if (!interaction.replied) {
+                                await interaction.reply({ 
+                                    content: '❌ カレンダーの表示中にエラーが発生しました。', 
+                                    ephemeral: true
+                                });
+                            }
+                        } catch (replyError) {
+                            console.error('エラーメッセージ送信失敗:', replyError);
+                        }
+                    }
+                    
+                } else if (customId.startsWith('goals_calendar_') && customId !== 'goals_calendar_today') {
+                    // カレンダーナビゲーション処理（前月/次月）
+                    if (!interaction.deferred) await interaction.deferUpdate();
+                    await handleGoalsCalendarNavigation(interaction);
+                    
+                } else if (customId === 'goals_calendar_today') {
+                    // 今月に戻るボタン
+                    if (!interaction.deferred) await interaction.deferUpdate();
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = today.getMonth() + 1;
+                    await showGoalsCalendar(interaction, year, month);
+                    
+                // ===== 習慣関連ボタン処理 =====
+                } else if (customId === 'quick_done') {
+                    // 習慣完了ボタン - 習慣一覧を表示
+                    await showHabitQuickDoneSelect(interaction);
+                    
+                } else if (customId === 'habit_list') {
+                    // 習慣一覧ボタン - 習慣一覧を表示
+                    await showHabitListMessage(interaction);
+                    
+                } else if (customId === 'view_weekly_stats') {
+                    // 週次統計を表示
+                    await showWeeklyStats(interaction);
+                    
+                } else if (customId.startsWith('habit_delete_confirm_')) {
+                    // 習慣削除確認
+                    const habitId = customId.replace('habit_delete_confirm_', '');
+                    await habitCommands.executeHabitDelete(interaction, habitId);
+                    
+                } else if (customId === 'habit_delete_cancel') {
+                    // 習慣削除キャンセル
+                    await interaction.update({ 
+                        content: '削除をキャンセルしました。',
+                        embeds: [],
+                        components: []
+                    });
+                    
+                } else if (customId.startsWith('calendar_')) {
+                    // カレンダーナビゲーション処理（習慣用）
+                    await habitCommands.handleCalendarNavigation(interaction);
+                    
+                // ===== 日記関連ボタン処理 =====
+                } else if (customId === 'diary_goal_frequency') {
+                    await handleDiaryGoalFrequency(interaction);
+                    
+                } else if (customId === 'diary_goal_mood') {
+                    await handleDiaryGoalMood(interaction);
+                    
+                } else if (customId === 'diary_goal_review') {
+                    await handleDiaryGoalReview(interaction);
+                    
+                } else if (customId === 'diary_goal_progress_button') {
+                    await handleDiaryGoalProgressButton(interaction);
+                    
+                } else if (customId === 'diary_review_save') {
+                    // 振り返り保存ボタン
+                    await handleDiaryReviewSave(interaction);
+                    
+                } else if (customId === 'diary_review_share') {
+                    // 振り返り詳細表示ボタン
+                    await handleDiaryReviewShare(interaction);
+                    
+                } else {
+                    // ===== その他の既存ボタン処理 =====
+                    await interactionHandler.handleInteraction(interaction);
+                }
+                
+            } catch (error) {
+                console.error('ボタン処理エラー:', error);
+                try {
+                    if (interaction.deferred) {
+                        await interaction.editReply({ 
+                            content: 'ボタン処理中にエラーが発生しました。',
+                            components: []
+                        });
+                    } else if (!interaction.replied) {
+                        await interaction.reply({ 
+                            content: 'ボタン処理中にエラーが発生しました。', 
+                            ephemeral: true
+                        });
+                    }
+                } catch (replyError) {
+                    console.error('エラーメッセージ送信失敗:', replyError);
+                }
+            }
+
+        // ===== Part 3: セレクトメニュー処理 =====
+        } else if (interaction.isStringSelectMenu()) {
+            const customId = interaction.customId;
+            
+            try {
+                if (customId === 'habit_done_select') {
+                    // 習慣完了選択
+                    await habitCommands.handleHabitDoneSelect(interaction);
+                } else if (customId === 'habit_edit_select') {
+                    // 習慣編集選択
+                    await habitCommands.handleHabitEditSelect(interaction);
+                } else if (customId === 'habit_delete_select') {
+                    // 習慣削除選択
+                    await habitCommands.handleHabitDeleteSelect(interaction);
+                } else if (customId === 'quick_done_select') {
+                    // クイック完了選択
+                    await handleQuickDoneSelect(interaction);
+                } else if (customId === 'diary_mood_first_select') {
+                    // 日記気分選択（最初）
+                    await handleDiaryMoodFirstSelect(interaction);
+                } else if (customId === 'diary_content_modal') {
+                    await handleDiaryContentSubmit(interaction);
+                } else {
+                    // 既存のセレクトメニュー処理
+                    await interactionHandler.handleInteraction(interaction);
+                }
+            } catch (error) {
+                console.error('セレクトメニュー処理エラー:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ 
+                        content: 'セレクトメニュー処理中にエラーが発生しました。', 
+                        ephemeral: true
+                    });
+                }
+            }
+            
+        // ===== モーダル処理 =====
+        } else if (interaction.isModalSubmit()) {
+            const customId = interaction.customId;
+            
+            try {
+                // Who Am I モーダル処理
+                if (customId.startsWith('whoami_edit_')) {
+                    const handled = await whoamiCommands.handleModalSubmit(interaction);
+                    if (handled) return;
+                }
+                
+                // ===== 🎯 週次目標設定モーダル処理（修正版） =====
+                if (customId === 'weekly_goals_modal') {
+                    console.log('🎯 週次目標設定モーダル送信を検出');
+                    await handleWeeklyGoalsSubmit(interaction);
+                    return;
+                }
+                
+                // 既存のモーダル処理
+                if (customId === 'quick_weight_modal') {
+                    // クイック体重記録の処理
+                    await handleQuickWeightSubmit(interaction);
+                } else if (customId === 'weekly_goals_modal') {
+                    // 週次目標設定の処理（上で処理済みなので削除可能）
+                    await handleWeeklyGoalsSubmit(interaction);
+                } else if (customId === 'diary_modal') {
+                    // 旧日記モーダル（削除予定）
+                    await handleDiarySubmit(interaction);
+                } else if (customId === 'diary_content_modal') {
+                    // 新日記本文モーダル
+                    await handleDiaryContentSubmit(interaction);
+                } else if (customId === 'add_habit_modal') {
+                    // 習慣追加モーダルの処理
+                    await handleAddHabitSubmit(interaction);
+                } else if (customId.startsWith('habit_edit_modal_')) {
+                    // 習慣編集モーダル
+                    const habitId = customId.replace('habit_edit_modal_', '');
+                    await habitCommands.saveHabitEdit(interaction, habitId);
+                } else if (customId === 'diary_goal_frequency_modal') {
+                    await handleDiaryGoalFrequencySubmit(interaction);
+                } else if (customId === 'diary_goal_mood_modal') {
+                    await handleDiaryGoalMoodSubmit(interaction);
+                } else if (customId === 'diary_goal_review_modal') {
+                    await handleDiaryGoalReviewSubmit(interaction);
+                } else {
+                    // 既存のモーダル処理（日記、習慣など）
+                    await interactionHandler.handleInteraction(interaction);
+                }
+            } catch (error) {
+                console.error('モーダル処理エラー:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ 
+                        content: 'モーダル処理中にエラーが発生しました。', 
+                        ephemeral: true
+                    });
+                }
+            }
+            
+        } else {
+            // その他のインタラクション
+            await interactionHandler.handleInteraction(interaction);
+        }
+    } catch (error) {
+        console.error('インタラクション処理エラー:', error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+                content: 'エラーが発生しました。しばらく後にもう一度お試しください。', 
+                ephemeral: true
+            });
+        }
+    }
 });
 
 // bot.js - 修正版 Part 9: ヘルパー関数1 - 統合目標・通知テスト
@@ -1720,26 +1746,192 @@ async function handleAddHabitSubmit(interaction) {
     }
 }
 
-// 週次目標設定の処理
+// ===== 週次目標保存関数の修正版 =====
+// handleWeeklyGoalsSubmit の修正版
 async function handleWeeklyGoalsSubmit(interaction) {
     const goal = interaction.fields.getTextInputValue('weekly_goal');
     
-    const { EmbedBuilder } = require('discord.js');
-    
-    const embed = new EmbedBuilder()
-        .setTitle('🎯 今週の目標を設定しました')
-        .setDescription(goal)
-        .addFields(
-            { name: '💪 頑張りましょう！', value: '小さな一歩が大きな変化を生みます', inline: false }
-        )
-        .setColor(0x27AE60)
-        .setTimestamp();
-    
-    await interaction.reply({ embeds: [embed] });
-    
-    console.log(`週次目標設定: ${interaction.user.id} - ${goal}`);
+    try {
+        const moment = require('moment');
+        const { EmbedBuilder } = require('discord.js');
+        
+        const userId = interaction.user.id;
+        const weekStart = moment().startOf('isoWeek').format('YYYY-MM-DD');
+        const weekEnd = moment().endOf('isoWeek').format('YYYY-MM-DD');
+        
+        // 既存のgoals_dataシートに保存
+        const goalContent = `[${weekStart}〜${weekEnd}] ${goal}`;
+        
+        // 🔧 修正：安全な保存関数を使用
+        await saveWeeklyGoalToSheetSafe(userId, goalContent);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎯 今週の目標を設定しました')
+            .setDescription(`**目標:** ${goal}`)
+            .addFields(
+                { name: '📅 期間', value: `${moment().startOf('isoWeek').format('MM/DD')} - ${moment().endOf('isoWeek').format('MM/DD')}`, inline: false },
+                { name: '💪 応援メッセージ', value: '素晴らしい目標ですね！一歩ずつ着実に進んでいきましょう。', inline: false }
+            )
+            .setColor(0x00AE86)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed] });
+        
+        console.log(`✅ 週次目標設定完了: ${userId} - ${goal}`);
+        
+    } catch (error) {
+        console.error('❌ 週次目標保存エラー:', error);
+        await interaction.reply({
+            content: '❌ 目標の保存中にエラーが発生しました。再度お試しください。',
+            ephemeral: true
+        });
+    }
 }
 
+// 修正版2：既存のsheetsUtilsメソッドを使用した週次目標保存関数
+async function saveWeeklyGoalToSheet(userId, goalContent) {
+    try {
+        const moment = require('moment');
+        
+        // 目標IDを生成（タイムスタンプ + ランダム）
+        const goalId = `weekly_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        
+        // 方法1: 既存のsaveToSheetメソッドを使用（推奨）
+        try {
+            const rowData = [
+                goalId,                                    // A: 目標ID
+                userId,                                    // B: ユーザーID
+                'weekly',                                  // C: 目標タイプ
+                goalContent,                               // D: 目標内容
+                moment().format('YYYY-MM-DD HH:mm:ss')     // E: 作成日時
+            ];
+            
+            console.log('💾 goals_dataにデータを保存中...', rowData);
+            await sheetsUtils.saveToSheet('goals_data', rowData);
+            
+            console.log(`✅ 週次目標を保存 (method1): ${goalId} - ${goalContent}`);
+            return goalId;
+            
+        } catch (saveToSheetError) {
+            console.error('saveToSheetエラー:', saveToSheetError);
+            
+            // 方法2: Google Sheets APIを直接使用（フォールバック）
+            console.log('🔄 Google Sheets API直接使用に切り替え...');
+            
+            const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+            const range = 'goals_data!A:E';
+            
+            const { google } = require('googleapis');
+            const auth = new google.auth.GoogleAuth({
+                keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+                scopes: ['https://www.googleapis.com/auth/spreadsheets']
+            });
+            const sheets = google.sheets({ version: 'v4', auth });
+            
+            const values = [[
+                goalId,
+                userId,
+                'weekly',
+                goalContent,
+                moment().format('YYYY-MM-DD HH:mm:ss')
+            ]];
+            
+            const response = await sheets.spreadsheets.values.append({
+                spreadsheetId,
+                range,
+                valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
+                resource: { values }
+            });
+            
+            console.log(`✅ 週次目標を保存 (method2): ${goalId} - ${goalContent}`);
+            return goalId;
+        }
+        
+    } catch (error) {
+        console.error('❌ 週次目標保存エラー:', error);
+        throw error;
+    }
+}
+
+// 更に安全な方法：既存の保存メソッドをチェックして使用
+async function saveWeeklyGoalToSheetSafe(userId, goalContent) {
+    try {
+        const moment = require('moment');
+        
+        // 目標IDを生成
+        const goalId = `weekly_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        
+        console.log('🔍 利用可能なsheetsUtilsメソッドをチェック中...');
+        console.log('sheetsUtils methods:', Object.getOwnPropertyNames(sheetsUtils));
+        
+        // 利用可能なメソッドを確認して使用
+        if (typeof sheetsUtils.saveToSheet === 'function') {
+            console.log('✅ saveToSheetメソッドを使用');
+            
+            const rowData = [
+                goalId,
+                userId,
+                'weekly',
+                goalContent,
+                moment().format('YYYY-MM-DD HH:mm:ss')
+            ];
+            
+            await sheetsUtils.saveToSheet('goals_data', rowData);
+            
+        } else if (typeof sheetsUtils.addRowToSheet === 'function') {
+            console.log('✅ addRowToSheetメソッドを使用');
+            
+            await sheetsUtils.addRowToSheet('goals_data', [
+                goalId, userId, 'weekly', goalContent, moment().format('YYYY-MM-DD HH:mm:ss')
+            ]);
+            
+        } else if (typeof sheetsUtils.appendRowToSheet === 'function') {
+            console.log('✅ appendRowToSheetメソッドを使用');
+            
+            await sheetsUtils.appendRowToSheet('goals_data', [
+                goalId, userId, 'weekly', goalContent, moment().format('YYYY-MM-DD HH:mm:ss')
+            ]);
+            
+        } else {
+            // 直接Google Sheets APIを使用
+            console.log('⚠️ 既存メソッドが見つからないため、Google Sheets APIを直接使用');
+            
+            const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+            const range = 'goals_data!A:E';
+            
+            const { google } = require('googleapis');
+            const auth = new google.auth.GoogleAuth({
+                keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+                scopes: ['https://www.googleapis.com/auth/spreadsheets']
+            });
+            const sheets = google.sheets({ version: 'v4', auth });
+            
+            const values = [[
+                goalId,
+                userId,
+                'weekly',
+                goalContent,
+                moment().format('YYYY-MM-DD HH:mm:ss')
+            ]];
+            
+            await sheets.spreadsheets.values.append({
+                spreadsheetId,
+                range,
+                valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
+                resource: { values }
+            });
+        }
+        
+        console.log(`✅ 週次目標を保存: ${goalId} - ${goalContent}`);
+        return goalId;
+        
+    } catch (error) {
+        console.error('❌ 週次目標保存エラー:', error);
+        throw error;
+    }
+}
 // bot.js - 修正版 Part 12: ハンドラー関数2・UI表示関数
 
 // クイック完了セレクト処理
