@@ -485,104 +485,276 @@ async sendWeeklyReport() {
     }
 }
 
-// パーソナライズされた週次レポート（ルーティン対応版）
-async sendPersonalizedWeeklyReport(channel, userId, weekStart, weekEnd) {
-    try {
-        const startDate = weekStart.format('YYYY-MM-DD');
-        const endDate = weekEnd.format('YYYY-MM-DD');
+// notifications.js の sendPersonalizedWeeklyReport を拡張
+// パーソナライズされた週次レポート（目標表示付き拡張版）
+// パーソナライズされた週次レポート（目標表示付き拡張版）
+    async sendPersonalizedWeeklyReport(channel, userId, weekStart, weekEnd) {
+        try {
+            const startDate = weekStart.format('YYYY-MM-DD');
+            const endDate = weekEnd.format('YYYY-MM-DD');
 
-        // 週次統計データを取得
-        const [weightEntries, diaryEntries, routineExecutions] = await Promise.all([
-            sheetsUtils.getWeightEntriesInRange(userId, startDate, endDate),
-            sheetsUtils.getDiaryEntriesInRange(userId, startDate, endDate),
-            sheetsUtils.getRoutineExecutionsInRange(userId, startDate, endDate)
-        ]);
+            // 既存の週次統計データを取得
+            const [weightEntries, diaryEntries, routineExecutions, weeklyGoals] = await Promise.all([
+                sheetsUtils.getWeightEntriesInRange(userId, startDate, endDate),
+                sheetsUtils.getDiaryEntriesInRange(userId, startDate, endDate),
+                sheetsUtils.getRoutineExecutionsInRange(userId, startDate, endDate),
+                this.getWeeklyGoals(userId, startDate) // 🎯 クラス内メソッドとして呼び出し
+            ]);
 
-        // 体重変化を計算
-        let weightChange = '変化なし';
-        if (weightEntries.length >= 2) {
-            const firstWeight = parseFloat(weightEntries[0].weight);
-            const lastWeight = parseFloat(weightEntries[weightEntries.length - 1].weight);
-            const change = lastWeight - firstWeight;
-            
-            if (change > 0) {
-                weightChange = `+${change.toFixed(1)}kg`;
-            } else if (change < 0) {
-                weightChange = `${change.toFixed(1)}kg`;
+            // 体重変化を計算
+            let weightChange = '変化なし';
+            if (weightEntries.length >= 2) {
+                const firstWeight = parseFloat(weightEntries[0].weight);
+                const lastWeight = parseFloat(weightEntries[weightEntries.length - 1].weight);
+                const change = lastWeight - firstWeight;
+                
+                if (change > 0) {
+                    weightChange = `+${change.toFixed(1)}kg`;
+                } else if (change < 0) {
+                    weightChange = `${change.toFixed(1)}kg`;
+                }
+            } else if (weightEntries.length === 1) {
+                weightChange = '1回のみ記録';
             }
-        } else if (weightEntries.length === 1) {
-            weightChange = '1回のみ記録';
-        }
 
-        // 気分の平均を計算
-        const averageMood = calculations.calculateAverageMood(diaryEntries);
+            // 気分の平均を計算
+            const averageMood = calculations.calculateAverageMood(diaryEntries);
 
-        // ルーティン実行統計を計算
-        const routineStats = this.calculateRoutineStats(routineExecutions);
+            // ルーティン実行統計を計算
+            const routineStats = this.calculateRoutineStats(routineExecutions);
 
-        const embed = new EmbedBuilder()
-            .setTitle('📊 週次統計')
-            .setDescription(`${weekStart.format('MM/DD')} - ${weekEnd.format('MM/DD')}の振り返り`)
-            .addFields(
-                { name: '⚖️ 体重記録', value: `${weightEntries.length}/7日`, inline: true },
-                { name: '📝 日記', value: `${diaryEntries.length}/7日`, inline: true },
-                { name: '🔄 ルーティン', value: `${routineStats.totalExecutions}回実行`, inline: true },
-                { name: '📈 体重変化', value: weightChange, inline: true },
-                { name: '😊 平均気分', value: averageMood, inline: true },
-                { name: '✅ ルーティン完了率', value: `${routineStats.completionRate}%`, inline: true }
-            )
-            .setColor(0xE74C3C)
-            .setTimestamp();
-
-        // ルーティン詳細を追加（どのルーティンを何回実行したか）
-        if (routineStats.routineDetails.length > 0) {
-            const routineDetailText = routineStats.routineDetails.map(detail => 
-                `• ${detail.name}: ${detail.executions}回 (完了:${detail.completed}回)`
-            ).join('\n');
-            
-            embed.addFields({
-                name: '🔄 ルーティン詳細',
-                value: routineDetailText,
-                inline: false
+            // 🎯 目標達成状況を評価
+            const goalStatus = this.evaluateWeeklyGoalAchievement(weeklyGoals, {
+                weightEntries,
+                diaryEntries,
+                routineExecutions
             });
+
+            const embed = new EmbedBuilder()
+                .setTitle('📊 週次統計')
+                .setDescription(`${weekStart.format('MM/DD')} - ${weekEnd.format('MM/DD')}の振り返り`)
+                .addFields(
+                    { name: '⚖️ 体重記録', value: `${weightEntries.length}/7日`, inline: true },
+                    { name: '📝 日記', value: `${diaryEntries.length}/7日`, inline: true },
+                    { name: '🔄 ルーティン', value: `${routineStats.totalExecutions}回実行`, inline: true },
+                    { name: '📈 体重変化', value: weightChange, inline: true },
+                    { name: '😊 平均気分', value: averageMood, inline: true },
+                    { name: '✅ ルーティン完了率', value: `${routineStats.completionRate}%`, inline: true }
+                )
+                .setColor(0xE74C3C)
+                .setTimestamp();
+
+            // 🎯 週次目標の表示（新機能）
+            if (weeklyGoals && weeklyGoals.length > 0) {
+                const goalsText = weeklyGoals.map(goal => {
+                    const status = goalStatus[goal.id] || '未評価';
+                    const statusEmoji = this.getGoalStatusEmoji(status);
+                    const cleanContent = goal.content.replace(/^\[.*?\]\s*/, ''); // 日付部分を除去
+                    return `${statusEmoji} ${cleanContent} (${status})`;
+                }).join('\n');
+
+                embed.addFields({
+                    name: '🎯 今週の目標と達成状況',
+                    value: goalsText,
+                    inline: false
+                });
+            }
+
+            // ルーティン詳細を追加（既存）
+            if (routineStats.routineDetails.length > 0) {
+                const routineDetailText = routineStats.routineDetails.map(detail => 
+                    `• ${detail.name}: ${detail.executions}回 (完了:${detail.completed}回)`
+                ).join('\n');
+                
+                embed.addFields({
+                    name: '🔄 ルーティン詳細',
+                    value: routineDetailText,
+                    inline: false
+                });
+            }
+
+            // 評価メッセージを更新（目標達成も考慮）
+            let evaluation = '';
+            const totalActiveDays = Math.max(weightEntries.length, diaryEntries.length, routineStats.activeDays);
+            const goalAchievementRate = this.calculateGoalAchievementRate(goalStatus);
+            
+            if (totalActiveDays >= 6 && goalAchievementRate >= 80) {
+                evaluation = '🌟 素晴らしい週でした！目標もバッチリです！';
+            } else if (totalActiveDays >= 4 && goalAchievementRate >= 60) {
+                evaluation = '👍 良いペースです！目標達成に向けて順調ですね！';
+            } else if (totalActiveDays >= 2 || goalAchievementRate >= 40) {
+                evaluation = '📝 記録を続けましょう！目標を意識して頑張りましょう！';
+            } else {
+                evaluation = '🚀 今週から再スタートしましょう！新しい目標を立ててみませんか？';
+            }
+
+            embed.addFields({ name: '🎯 総合評価', value: evaluation, inline: false });
+
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('set_weekly_goals')
+                        .setLabel('今週の目標設定')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('🎯'),
+                    new ButtonBuilder()
+                        .setCustomId('view_weekly_stats')
+                        .setLabel('詳細統計')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('📊')
+                );
+
+            await channel.send({ 
+                content: `<@${userId}>`,
+                embeds: [embed], 
+                components: [row] 
+            });
+
+        } catch (error) {
+            console.error('パーソナライズ週次レポートエラー:', error);
         }
-
-        // 評価メッセージを追加
-        let evaluation = '';
-        const totalActiveDays = Math.max(weightEntries.length, diaryEntries.length, routineStats.activeDays);
-        
-        if (totalActiveDays >= 6) {
-            evaluation = '🌟 素晴らしい継続力です！';
-        } else if (totalActiveDays >= 4) {
-            evaluation = '👍 良いペースで続けられています！';
-        } else if (totalActiveDays >= 2) {
-            evaluation = '📝 記録を続けましょう！';
-        } else {
-            evaluation = '🚀 今週から再スタートしましょう！';
-        }
-
-        embed.addFields({ name: '🎯 評価', value: evaluation, inline: false });
-
-        const row = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('set_weekly_goals')
-                    .setLabel('今週の目標設定')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('🎯')
-            );
-
-        await channel.send({ 
-            content: `<@${userId}>`,
-            embeds: [embed], 
-            components: [row] 
-        });
-
-    } catch (error) {
-        console.error('パーソナライズ週次レポートエラー:', error);
     }
-}
 
+    async getWeeklyGoals(userId, weekStartDate) {
+        try {
+            const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+            const range = 'goals_data!A:E';
+            
+            const { google } = require('googleapis');
+            const auth = new google.auth.GoogleAuth({
+                keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './google-credentials.json',
+                scopes: ['https://www.googleapis.com/auth/spreadsheets']
+            });
+            const sheets = google.sheets({ version: 'v4', auth });
+            
+            const response = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range
+            });
+            
+            const rows = response.data.values || [];
+            const weeklyGoals = [];
+            
+            // ヘッダー行をスキップして週次目標をフィルタリング
+            rows.slice(1).forEach(row => {
+                const goalId = row[0];
+                const goalUserId = row[1];
+                const goalType = row[2];
+                const goalContent = row[3];
+                const createdAt = row[4];
+                
+                // 該当ユーザーの週次目標で、今週のものを取得
+                if (goalUserId === userId && goalType === 'weekly' && goalContent) {
+                    // 目標内容から週の期間を抽出して一致するかチェック
+                    const weekPattern = new RegExp(`\\[${weekStartDate.replace(/-/g, '-')}[〜～]`);
+                    if (weekPattern.test(goalContent)) {
+                        weeklyGoals.push({
+                            id: goalId,
+                            content: goalContent,
+                            createdAt: createdAt
+                        });
+                    }
+                }
+            });
+            
+            console.log(`📋 週次目標取得: ${weeklyGoals.length}件 (${userId}, ${weekStartDate})`);
+            return weeklyGoals;
+            
+        } catch (error) {
+            console.error('週次目標取得エラー:', error);
+            return [];
+        }
+    }
+
+    // 🎯 目標達成状況評価メソッド（クラス内）
+    evaluateWeeklyGoalAchievement(goals, activityData) {
+        const goalStatus = {};
+        
+        goals.forEach(goal => {
+            const content = goal.content.toLowerCase();
+            let status = '未評価';
+            
+            // 簡単なキーワードマッチングで達成状況を判定
+            if (content.includes('日記') || content.includes('diary')) {
+                if (content.includes('毎日') && activityData.diaryEntries.length >= 7) {
+                    status = '達成';
+                } else if (activityData.diaryEntries.length >= 5) {
+                    status = '概ね達成';
+                } else if (activityData.diaryEntries.length >= 3) {
+                    status = '部分達成';
+                } else {
+                    status = '未達成';
+                }
+            } else if (content.includes('体重') || content.includes('weight')) {
+                if (content.includes('毎日') && activityData.weightEntries.length >= 7) {
+                    status = '達成';
+                } else if (activityData.weightEntries.length >= 5) {
+                    status = '概ね達成';
+                } else if (activityData.weightEntries.length >= 3) {
+                    status = '部分達成';
+                } else {
+                    status = '未達成';
+                }
+            } else if (content.includes('ルーティン') || content.includes('routine')) {
+                if (activityData.routineExecutions.length >= 10) {
+                    status = '達成';
+                } else if (activityData.routineExecutions.length >= 7) {
+                    status = '概ね達成';
+                } else if (activityData.routineExecutions.length >= 3) {
+                    status = '部分達成';
+                } else {
+                    status = '未達成';
+                }
+            } else {
+                // その他の目標は記録活動全体で判定
+                const totalActivity = activityData.weightEntries.length + 
+                                    activityData.diaryEntries.length + 
+                                    Math.min(activityData.routineExecutions.length, 7);
+                if (totalActivity >= 15) {
+                    status = '達成';
+                } else if (totalActivity >= 10) {
+                    status = '概ね達成';
+                } else if (totalActivity >= 5) {
+                    status = '部分達成';
+                } else {
+                    status = '未達成';
+                }
+            }
+            
+            goalStatus[goal.id] = status;
+        });
+        
+        return goalStatus;
+    }
+
+    // 🎯 目標達成状況の絵文字取得メソッド（クラス内）
+    getGoalStatusEmoji(status) {
+        switch (status) {
+            case '達成': return '🎉';
+            case '概ね達成': return '✅';
+            case '部分達成': return '🔸';
+            case '未達成': return '❌';
+            default: return '❓';
+        }
+    }
+
+    // 🎯 目標達成率計算メソッド（クラス内）
+    calculateGoalAchievementRate(goalStatus) {
+        const statuses = Object.values(goalStatus);
+        if (statuses.length === 0) return 0;
+        
+        const achievementPoints = statuses.reduce((total, status) => {
+            switch (status) {
+                case '達成': return total + 100;
+                case '概ね達成': return total + 80;
+                case '部分達成': return total + 50;
+                case '未達成': return total + 0;
+                default: return total + 0;
+            }
+        }, 0);
+        
+        return Math.round(achievementPoints / statuses.length);
+    }
 // ルーティン統計計算関数を追加
 calculateRoutineStats(routineExecutions) {
     if (!routineExecutions || routineExecutions.length === 0) {
