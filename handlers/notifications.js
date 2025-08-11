@@ -58,7 +58,7 @@ class NotificationManager {
 
         // 4. 毎週月曜日8:00 - 週次レポート
         const weeklyReportJob = cron.schedule('0 8 * * 1', () => {
-            this.sendWeeklyReport();
+            this.sendPersonalizedWeeklyReport();
         }, {
             scheduled: true,
             timezone: 'Asia/Tokyo'
