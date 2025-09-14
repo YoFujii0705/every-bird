@@ -17,6 +17,7 @@ const interactionHandler = require('./handlers/interactions');
 const routineCommands = require('./commands/routine');
 const RoutineHandler = require('./handlers/routineHandler');
 const whoamiCommands = require('./commands/whoami');
+const weeklyDietReports = require('./handlers/weeklyDietReports');
 
 // 通知システムのインポート
 const NotificationManager = require('./handlers/notifications');
@@ -24,6 +25,10 @@ const NotificationManager = require('./handlers/notifications');
 // Habit通知システムのインポート
 const { HabitNotificationService } = require('./services/habitNotificationService');
 const HabitNotificationsHandler = require('./handlers/habitNotifications');
+
+// TARGET_USER_ID と TARGET_CHANNEL_ID を実際の値に置き換え
+const TARGET_USER_ID = '406748284942548992';
+const TARGET_CHANNEL_ID = '1416679147878486119';
 
 // 環境変数の読み込み
 require('dotenv').config();
@@ -95,6 +100,25 @@ const commands = [
             subcommand
                 .setName('evening')
                 .setDescription('夜の通知セットをテスト'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('weekly-diet')
+                .setDescription('週次ダイエットレポートをテスト')), // ← このカンマが重要
+    
+    // デバッグ用コマンド
+    new SlashCommandBuilder()
+        .setName('debug-diet')
+        .setDescription('ダイエット機能のデバッグ')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('report')
+                .setDescription('週次レポートを直接生成してテスト')
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('data')
+                .setDescription('ダイエット記録データを確認')
+        )
                 
 ].map(command => command.toJSON());
 
@@ -269,7 +293,15 @@ client.once(Events.ClientReady, async readyClient => {
     } catch (error) {
         console.error('❌ Habit通知システム初期化エラー:', error);
     }
- 
+
+// 週次ダイエットレポート通知システムを初期化
+    try {
+        weeklyDietReports.initializeWeeklyReportSystem(client, TARGET_USER_ID, TARGET_CHANNEL_ID);
+        console.log('📊 週次ダイエットレポート通知システムを初期化しました');
+    } catch (error) {
+        console.error('週次ダイエットレポート初期化エラー:', error);
+    }
+    
     console.log('🤖 Botが正常に起動しました！');
 });
 
@@ -1259,6 +1291,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 case 'routine':
                     await routineCommands.handleCommand(interaction, routineHandler);
                     break;
+                case 'debug-diet':
+   　　　　　　　　　　 await handleDebugDiet(interaction);
+  　　　　　　　　　　  break;
             }
 
         // ===== ボタンインタラクション処理 =====
@@ -1576,6 +1611,63 @@ client.on(Events.InteractionCreate, async interaction => {
 
 // bot.js - 修正版 Part 9: ヘルパー関数1 - 統合目標・通知テスト
 
+// ハンドラー関数を追加：
+async function handleDebugDiet(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+    const userId = interaction.user.id;
+    
+    try {
+        await interaction.deferReply({ ephemeral: true });
+        
+        if (subcommand === 'report') {
+            console.log('🔍 デバッグ: 週次レポート生成テスト開始');
+            
+            // diet.jsから直接generateWeeklyReportを呼び出し
+            const dietCommands = require('./commands/diet');
+            console.log('✅ diet.js モジュール読み込み成功');
+            
+            const reportEmbed = await dietCommands.generateWeeklyReport(userId);
+            console.log('📊 レポート生成結果:', reportEmbed ? '成功' : '失敗');
+            
+            if (reportEmbed) {
+                await interaction.editReply({ 
+                    content: '📊 週次レポート生成成功！',
+                    embeds: [reportEmbed] 
+                });
+            } else {
+                await interaction.editReply({ 
+                    content: '❌ 週次レポート生成に失敗しました。データが不足している可能性があります。' 
+                });
+            }
+            
+        } else if (subcommand === 'data') {
+            console.log('🔍 デバッグ: ダイエットデータ確認開始');
+            
+            // 今週のダイエット記録を取得
+            const startDate = require('moment')().startOf('isoWeek').format('YYYY-MM-DD');
+            const endDate = require('moment')().endOf('isoWeek').format('YYYY-MM-DD');
+            
+            const dietCommands = require('./commands/diet');
+            const records = await dietCommands.getDietRecordsInRange(userId, startDate, endDate);
+            
+            console.log('📋 今週のダイエット記録:', records);
+            
+            const dataInfo = `📊 データ確認結果
+・期間: ${startDate} - ${endDate}
+・記録数: ${records.length}件
+・データ: ${JSON.stringify(records, null, 2)}`;
+            
+            await interaction.editReply({ content: dataInfo });
+        }
+        
+    } catch (error) {
+        console.error('デバッグコマンドエラー:', error);
+        await interaction.editReply({ 
+            content: `❌ デバッグ中にエラー: ${error.message}` 
+        });
+    }
+}
+
 // ===== 🎯 統合目標ダッシュボード用のヘルパー関数 =====
 
 // 目標カレンダー表示（update版）
@@ -1652,6 +1744,8 @@ async function handleGoalsCalendarNavigation(interaction) {
 }
 
 // ===== 通知テスト用関数（habit通知+朝の通知追加版） =====
+// bot.jsのhandleTestNotification関数を以下に置き換えてください
+
 async function handleTestNotification(interaction) {
     const subcommand = interaction.options.getSubcommand();
     
@@ -1708,7 +1802,6 @@ async function handleTestNotification(interaction) {
             case 'habit-notification':
                 // 🔔 Habit通知のテスト送信
                 if (habitNotificationService) {
-                    // テスト用のリマインダー通知を送信
                     const channel = interaction.channel;
                     const userId = interaction.user.id;
                     
@@ -1775,6 +1868,55 @@ async function handleTestNotification(interaction) {
                     content: '🌙 夜の通知セットをテスト送信しました。', 
                     ephemeral: true 
                 });
+                break;
+
+            case 'weekly-diet':
+                // 📊 週次ダイエットレポートのテスト送信（デバッグ強化版）
+                try {
+                    console.log('🔍 weekly-diet テストケース実行開始');
+                    console.log('🔍 ユーザーID:', interaction.user.id);
+                    console.log('🔍 チャンネルID:', interaction.channel.id);
+                    
+                    // ファイルの存在確認
+                    try {
+                        const weeklyDietReports = require('./handlers/weeklyDietReports');
+                        console.log('✅ weeklyDietReports モジュール読み込み成功');
+                        
+                        // 関数の存在確認
+                        if (typeof weeklyDietReports.sendTestWeeklyReport === 'function') {
+                            console.log('✅ sendTestWeeklyReport 関数が存在します');
+                            
+                            await weeklyDietReports.sendTestWeeklyReport(
+                                client, 
+                                interaction.user.id, 
+                                interaction.channel.id
+                            );
+                            
+                            await interaction.reply({ 
+                                content: '📊 週次ダイエットレポートをテスト送信しました。', 
+                                ephemeral: true 
+                            });
+                        } else {
+                            console.error('❌ sendTestWeeklyReport 関数が見つかりません');
+                            await interaction.reply({ 
+                                content: '❌ sendTestWeeklyReport 関数が見つかりません。', 
+                                ephemeral: true 
+                            });
+                        }
+                    } catch (requireError) {
+                        console.error('❌ weeklyDietReports モジュール読み込みエラー:', requireError);
+                        await interaction.reply({ 
+                            content: '❌ weeklyDietReports モジュールが見つかりません。handlers/weeklyDietReports.js ファイルが存在するか確認してください。', 
+                            ephemeral: true 
+                        });
+                    }
+                } catch (error) {
+                    console.error('❌ 週次ダイエットレポートテスト全体エラー:', error);
+                    await interaction.reply({ 
+                        content: '❌ 週次ダイエットレポートの送信中にエラーが発生しました。詳細はログを確認してください。', 
+                        ephemeral: true 
+                    });
+                }
                 break;
 
             default:
@@ -2692,61 +2834,6 @@ async function showHabitListMessage(interaction) {
     }
 }
 
-
-// ===== 通知テスト関数 =====
-async function handleTestNotification(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-    
-    if (!notificationManager) {
-        await interaction.reply({ 
-            content: '❌ 通知システムが初期化されていません。', 
-            ephemeral: true 
-        });
-        return;
-    }
-    
-    try {
-        switch (subcommand) {
-            case 'evening':
-                const eveningChannel = interaction.channel;
-                const eveningUserId = interaction.user.id;
-                
-                await sendEveningNotificationSet(eveningChannel, eveningUserId);
-                
-                await interaction.reply({ 
-                    content: '🌙 夜の通知セット（ダイエット記録付き）をテスト送信しました。', 
-                    ephemeral: true 
-                });
-                break;
-
-            case 'morning':
-                const channel = interaction.channel;
-                const userId = interaction.user.id;
-                
-                await sendMorningNotificationSet(channel, userId);
-                
-                await interaction.reply({ 
-                    content: '🌅 朝の通知セットをテスト送信しました。', 
-                    ephemeral: true 
-                });
-                break;
-
-            default:
-                await notificationManager.testNotification(subcommand);
-                await interaction.reply({ 
-                    content: `📝 ${subcommand} 通知をテスト送信しました。`, 
-                    ephemeral: true 
-                });
-        }
-    } catch (error) {
-        console.error('通知テストエラー:', error);
-        await interaction.reply({ 
-            content: '❌ 通知テスト中にエラーが発生しました。', 
-            ephemeral: true 
-        });
-    }
-}
-
 // ===== プロセス終了時の処理 =====
 process.on('SIGINT', () => {
     console.log('Botを停止中...');
@@ -2762,6 +2849,9 @@ process.on('SIGINT', () => {
     if (habitNotificationService) {
         habitNotificationService.shutdown();
     }
+
+    // 週次レポートシステムを停止
+    weeklyDietReports.shutdownWeeklyReportSystem();
  
     client.destroy();
     process.exit(0);
@@ -2781,6 +2871,9 @@ process.on('SIGTERM', () => {
     if (habitNotificationService) {
         habitNotificationService.shutdown();
     }
+
+    // 週次レポートシステムを停止
+    weeklyDietReports.shutdownWeeklyReportSystem();
     
     client.destroy();
     process.exit(0);
