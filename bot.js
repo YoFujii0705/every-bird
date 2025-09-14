@@ -869,80 +869,54 @@ async function showDietStep4MealTimes(interaction) {
     });
 }
 
-// Step 5: 数値入力（ミロ・運動・間食）
+// Step 5: 全ての数値・テキスト入力を一度に（簡素化版）
+// Step 5: 全項目入力（最終ステップ）
 async function showDietStep5Numbers(interaction) {
     const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
     
     const modal = new ModalBuilder()
-        .setCustomId('diet_step5_numbers')
-        .setTitle('ダイエット記録 (5/6)');
+        .setCustomId('diet_checklist_submit') // 直接最終処理へ
+        .setTitle('ダイエット記録 (5/5)');
 
-    // ミロの回数
     const miloCount = new TextInputBuilder()
         .setCustomId('milo_count')
-        .setLabel('ミロで過食衝動を乗り切った回数（数字のみ）')
+        .setLabel('ミロ回数（数字のみ）')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: 3（0の場合は空欄でも可）')
+        .setPlaceholder('例: 3（0の場合は空欄）')
         .setRequired(false)
         .setMaxLength(2);
 
-    // エアロバイクの時間
     const exerciseMinutes = new TextInputBuilder()
         .setCustomId('exercise_minutes')
-        .setLabel('エアロバイクの時間（分、数字のみ）')
+        .setLabel('エアロバイク時間（分）')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: 30（0の場合は空欄でも可）')
+        .setPlaceholder('例: 30（0の場合は空欄）')
         .setRequired(false)
         .setMaxLength(3);
 
-    // 間食の内容
     const snacks = new TextInputBuilder()
         .setCustomId('snacks')
-        .setLabel('間食をした場合の食品名')
+        .setLabel('間食（なしの場合は空欄）')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: クッキー2枚、りんご1個（なしの場合は空欄）')
+        .setPlaceholder('例: クッキー2枚、りんご1個')
         .setRequired(false)
         .setMaxLength(100);
+
+    // ストレス度と今日のひとことを1つのフィールドに統合
+    const finalNotes = new TextInputBuilder()
+        .setCustomId('final_notes')
+        .setLabel('ストレス度（1-5）と今日のひとこと')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('1行目: ストレス度（1-5の数字）\n2行目以降: 今日の感想など')
+        .setRequired(false)
+        .setMaxLength(300);
 
     const row1 = new ActionRowBuilder().addComponents(miloCount);
     const row2 = new ActionRowBuilder().addComponents(exerciseMinutes);
     const row3 = new ActionRowBuilder().addComponents(snacks);
+    const row4 = new ActionRowBuilder().addComponents(finalNotes);
 
-    modal.addComponents(row1, row2, row3);
-    
-    await interaction.showModal(modal);
-}
-
-// Step 6: 最終入力（ストレス度・ひとこと）
-async function showDietStep6Final(interaction) {
-    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-    
-    const modal = new ModalBuilder()
-        .setCustomId('diet_checklist_submit')
-        .setTitle('ダイエット記録 (6/6)');
-
-    // ストレス度
-    const stressLevel = new TextInputBuilder()
-        .setCustomId('stress_level')
-        .setLabel('今日のストレス度（1-5の数字）')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('1:とても楽 2:楽 3:普通 4:ストレス 5:とてもストレス')
-        .setRequired(false)
-        .setMaxLength(1);
-
-    // 今日のひとこと
-    const notes = new TextInputBuilder()
-        .setCustomId('daily_note')
-        .setLabel('今日のひとこと')
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('今日の感想、気づいたこと、明日への意気込みなど')
-        .setRequired(false)
-        .setMaxLength(300);
-
-    const row1 = new ActionRowBuilder().addComponents(stressLevel);
-    const row2 = new ActionRowBuilder().addComponents(notes);
-
-    modal.addComponents(row1, row2);
+    modal.addComponents(row1, row2, row3, row4);
     
     await interaction.showModal(modal);
 }
@@ -1008,22 +982,36 @@ async function handleDietStep4Meals(interaction) {
 }
 
 // Step 5: 数値入力の処理
-async function handleDietStep5Numbers(interaction) {
-    const miloCount = parseInt(interaction.fields.getTextInputValue('milo_count')) || 0;
-    const exerciseMinutes = parseInt(interaction.fields.getTextInputValue('exercise_minutes')) || 0;
-    const snacks = interaction.fields.getTextInputValue('snacks') || '';
+
+// 健康的なアプローチを重視した励ましメッセージ生成
+function generateHealthyEncouragement(achievementCount, data) {
+    const messages = [];
     
-    const userId = interaction.user.id;
+    // 記録をつけたこと自体を評価
+    messages.push('今日も記録をつけることができました。継続することが一番大切です。');
     
-    // 一時保存
-    global.tempDietData[userId].milo_count = miloCount;
-    global.tempDietData[userId].exercise_minutes = exerciseMinutes;
-    global.tempDietData[userId].snacks_list = snacks;
+    // 過食について健康的なメッセージ
+    if (data.no_overeating) {
+        messages.push('過食をコントロールできたのは素晴らしいことです。');
+    } else if (!data.no_overeating && data.milo_count > 0) {
+        messages.push(`過食衝動に対してミロで対処する工夫ができています（${data.milo_count}回）。`);
+    }
     
-    console.log('Step 5完了:', global.tempDietData[userId]);
+    // 運動について
+    if (data.exercise_minutes >= 30) {
+        messages.push('30分以上の運動、体にも心にも良い影響があります。');
+    } else if (data.exercise_minutes > 0) {
+        messages.push('運動を実施できました。短時間でも続けることに意味があります。');
+    }
     
-    // Step 6へ（最終モーダル表示）
-    await showDietStep6Final(interaction);
+    // 全体的な達成について
+    if (achievementCount >= 4) {
+        messages.push('多くの健康的な習慣を実践できています。');
+    } else if (achievementCount >= 2) {
+        messages.push('着実に健康的な生活に向かっています。');
+    }
+    
+    return messages.join(' ');
 }
 
 // Google Sheetsにダイエット記録を保存
@@ -1080,6 +1068,7 @@ function generateHealthyEncouragement(achievementCount, data) {
 }
 
 // 最終的なダイエットチェックリスト送信処理（段階的システム版）
+// 修正版：新しい5ステップシステム対応のhandleDietChecklistSubmit
 async function handleDietChecklistSubmit(interaction) {
     try {
         // まず最初にdefer（timeout回避）
@@ -1088,9 +1077,30 @@ async function handleDietChecklistSubmit(interaction) {
         const userId = interaction.user.id;
         const today = require('moment')().format('YYYY-MM-DD');
         
-        // Step 6の入力を取得
-        const stressLevel = parseInt(interaction.fields.getTextInputValue('stress_level')) || null;
-        const dailyNote = interaction.fields.getTextInputValue('daily_note') || '';
+        // Step 5の全入力を取得（新しいフィールド名に対応）
+        const miloCount = parseInt(interaction.fields.getTextInputValue('milo_count')) || 0;
+        const exerciseMinutes = parseInt(interaction.fields.getTextInputValue('exercise_minutes')) || 0;
+        const snacks = interaction.fields.getTextInputValue('snacks') || '';
+        
+        // final_notesまたはstress_level + daily_noteを取得
+        let stressLevel = null;
+        let dailyNote = '';
+        
+        try {
+            // 新しい統合フィールドを試行
+            const finalNotesInput = interaction.fields.getTextInputValue('final_notes') || '';
+            const notesLines = finalNotesInput.split('\n');
+            stressLevel = notesLines.length > 0 ? parseInt(notesLines[0]) || null : null;
+            dailyNote = notesLines.length > 1 ? notesLines.slice(1).join('\n') : '';
+        } catch (finalNotesError) {
+            // 古い分離フィールドを試行
+            try {
+                stressLevel = parseInt(interaction.fields.getTextInputValue('stress_level')) || null;
+                dailyNote = interaction.fields.getTextInputValue('daily_note') || '';
+            } catch (separateFieldsError) {
+                console.log('ストレス度・ひとことフィールドが見つかりません（オプションのためスキップ）');
+            }
+        }
         
         // 一時保存されたデータを取得
         const tempData = global.tempDietData[userId] || {};
@@ -1105,9 +1115,9 @@ async function handleDietChecklistSubmit(interaction) {
             breakfast_time: tempData.breakfast_time || false,
             lunch_time: tempData.lunch_time || false,
             dinner_time: tempData.dinner_time || false,
-            milo_count: tempData.milo_count || 0,
-            exercise_minutes: tempData.exercise_minutes || 0,
-            snacks_list: tempData.snacks_list || '',
+            milo_count: miloCount,
+            exercise_minutes: exerciseMinutes,
+            snacks_list: snacks,
             stress_level: stressLevel,
             daily_note: dailyNote
         };
@@ -1162,7 +1172,7 @@ async function handleDietChecklistSubmit(interaction) {
         }
         
         if (finalData.stress_level) {
-            const stressEmoji = ['😫', '😰', '😐', '🙂', '😊'][finalData.stress_level - 1] || '😐';
+            const stressEmoji = ['😊', '🙂', '😐', '😰', '😫'][finalData.stress_level - 1] || '😐';
             embed.addFields({
                 name: '😌 ストレス度',
                 value: `${finalData.stress_level}/5 ${stressEmoji}`,
@@ -1178,7 +1188,7 @@ async function handleDietChecklistSubmit(interaction) {
             });
         }
         
-        // 励ましメッセージ（健康的なアプローチを重視）
+        // 健康的なアプローチを重視した励ましメッセージ
         const encouragement = generateHealthyEncouragement(achievements.length, finalData);
         if (encouragement) {
             embed.addFields({
@@ -1215,149 +1225,6 @@ async function handleDietChecklistSubmit(interaction) {
         }
     }
 }
-
-// bot.js - 完全版 Part 5: ダイエットチェックリスト送信処理・インタラクション処理開始
-
-// ダイエットチェックリスト送信処理
-async function handleDietChecklistSubmit(interaction) {
-    try {
-        // まず最初にdefer（timeout回避）
-        await interaction.deferReply();
-        
-        const basicItems = interaction.fields.getTextInputValue('basic_items') || '';
-        const miloCount = parseInt(interaction.fields.getTextInputValue('milo_count')) || 0;
-        const exerciseMinutes = parseInt(interaction.fields.getTextInputValue('exercise_minutes')) || 0;
-        const snacks = interaction.fields.getTextInputValue('snacks') || '';
-        const notes = interaction.fields.getTextInputValue('notes') || '';
-        
-        const userId = interaction.user.id;
-        const today = require('moment')().format('YYYY-MM-DD');
-        
-        // 基本項目の解析（○が含まれているかチェック）
-        const checkItems = {
-            no_overeating: basicItems.includes('過食なし') && basicItems.includes('○'),
-            good_sleep: basicItems.includes('良い睡眠') && basicItems.includes('○'),
-            water_2l: basicItems.includes('水分2L') && basicItems.includes('○'),
-            breakfast_time: basicItems.includes('朝食時間') && basicItems.includes('○'),
-            lunch_time: basicItems.includes('昼食時間') && basicItems.includes('○'),
-            dinner_time: basicItems.includes('夕食時間') && basicItems.includes('○')
-        };
-        
-        // ストレス度の抽出
-        const stressMatch = notes.match(/ストレス度[：:]\s*([1-5])/);
-        const stressLevel = stressMatch ? parseInt(stressMatch[1]) : null;
-        
-        // 今日のひとことの抽出
-        const noteLines = notes.split('\n').filter(line => 
-            !line.includes('ストレス度') && line.trim().length > 0
-        );
-        const dailyNote = noteLines.length > 0 ? noteLines.join('\n') : '';
-        
-        // Google Sheetsに保存
-        await saveDietRecord(userId, today, {
-            ...checkItems,
-            milo_count: miloCount,
-            exercise_minutes: exerciseMinutes,
-            snacks_list: snacks,
-            stress_level: stressLevel,
-            daily_note: dailyNote
-        });
-        
-        // 結果表示
-        const { EmbedBuilder } = require('discord.js');
-        const embed = new EmbedBuilder()
-            .setTitle('ダイエット記録を保存しました')
-            .setDescription('今日の記録')
-            .setColor('#4CAF50')
-            .setTimestamp();
-        
-        // 達成項目の表示
-        const achievements = [];
-        if (checkItems.no_overeating) achievements.push('過食なし');
-        if (checkItems.good_sleep) achievements.push('良い睡眠');
-        if (checkItems.water_2l) achievements.push('水分2L以上');
-        if (checkItems.breakfast_time) achievements.push('朝食時間OK');
-        if (checkItems.lunch_time) achievements.push('昼食時間OK');
-        if (checkItems.dinner_time) achievements.push('夕食時間OK');
-        
-        if (achievements.length > 0) {
-            embed.addFields({
-                name: '達成項目',
-                value: achievements.join(', '),
-                inline: false
-            });
-        }
-        
-        // 数値項目の表示
-        const metrics = [];
-        if (miloCount > 0) metrics.push(`ミロ: ${miloCount}回`);
-        if (exerciseMinutes > 0) metrics.push(`エアロバイク: ${exerciseMinutes}分`);
-        
-        if (metrics.length > 0) {
-            embed.addFields({
-                name: '実施記録',
-                value: metrics.join(', '),
-                inline: false
-            });
-        }
-        
-        if (snacks) {
-            embed.addFields({
-                name: '間食',
-                value: snacks,
-                inline: false
-            });
-        }
-        
-        if (stressLevel) {
-            embed.addFields({
-                name: 'ストレス度',
-                value: `${stressLevel}/5`,
-                inline: true
-            });
-        }
-        
-        if (dailyNote) {
-            embed.addFields({
-                name: '今日のひとこと',
-                value: dailyNote,
-                inline: false
-            });
-        }
-        
-        // 励ましメッセージ
-        const encouragement = generateDietEncouragement(achievements.length, miloCount, exerciseMinutes);
-        if (encouragement) {
-            embed.addFields({
-                name: '応援メッセージ',
-                value: encouragement,
-                inline: false
-            });
-        }
-        
-        // deferReply を使用しているので editReply で応答
-        await interaction.editReply({ embeds: [embed] });
-        
-    } catch (error) {
-        console.error('ダイエット記録保存エラー:', error);
-        
-        try {
-            if (interaction.deferred) {
-                await interaction.editReply({
-                    content: 'ダイエット記録の保存中にエラーが発生しました。'
-                });
-            } else {
-                await interaction.reply({
-                    content: 'ダイエット記録の保存中にエラーが発生しました。',
-                    ephemeral: true
-                });
-            }
-        } catch (replyError) {
-            console.error('エラー応答失敗:', replyError);
-        }
-    }
-}
-
 
 // ===== インタラクション処理（修正版・defer問題解決） =====
 // ===== インタラクション処理（修正版） =====
@@ -1658,12 +1525,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (customId.startsWith('whoami_edit_')) {
                     const handled = await whoamiCommands.handleModalSubmit(interaction);
                     if (handled) return;
-                }
-                
-                // ダイエット記録モーダル処理
-                if (customId === 'diet_step5_numbers') {
-                    await handleDietStep5Numbers(interaction);
-                    return;
                 }
                 
                 // ダイエットチェックリスト送信処理（直接実装）
