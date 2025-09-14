@@ -1,5 +1,7 @@
 // bot.js - 修正版 Part 1: インポート・初期設定
 
+// bot.js - 完全版 Part 1: インポート・初期設定
+
 // ===== インポート部分 =====
 const { Client, Events, GatewayIntentBits, Collection, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const path = require('path');
@@ -10,6 +12,7 @@ const diaryCommands = require('./commands/diary');
 const habitCommands = require('./commands/habit');
 const weightCommands = require('./commands/weight');
 const goalsCommands = require('./commands/goals');
+const dietCommands = require('./commands/diet');
 const interactionHandler = require('./handlers/interactions');
 const routineCommands = require('./commands/routine');
 const RoutineHandler = require('./handlers/routineHandler');
@@ -18,7 +21,7 @@ const whoamiCommands = require('./commands/whoami');
 // 通知システムのインポート
 const NotificationManager = require('./handlers/notifications');
 
-// 🔔 Habit通知システムのインポート
+// Habit通知システムのインポート
 const { HabitNotificationService } = require('./services/habitNotificationService');
 const HabitNotificationsHandler = require('./handlers/habitNotifications');
 
@@ -53,9 +56,10 @@ const commands = [
     weightCommands.createCommand(),
     goalsCommands.createCommand(),
     whoamiCommands.createCommand(),
-    routineCommands.createCommand(), 
+    routineCommands.createCommand(),
+    dietCommands.createCommand(), // 新しく追加
     
-    // 🔔 通知テスト用コマンド
+    // 通知テスト用コマンド
     new SlashCommandBuilder()
         .setName('test-notification')
         .setDescription('通知システムのテスト')
@@ -82,7 +86,7 @@ const commands = [
         .addSubcommand(subcommand =>
             subcommand
                 .setName('habit-notification')
-                .setDescription('🔔 習慣通知をテスト'))
+                .setDescription('習慣通知をテスト'))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('morning')
@@ -96,8 +100,6 @@ const commands = [
 
 // REST APIの設定
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
-// bot.js - 修正版 Part 2: 初期化関数
 
 // Bot起動時に実行（重複実行防止版）
 async function initializeBot() {
@@ -115,7 +117,11 @@ async function initializeBot() {
         await sheetsUtils.initializeWhoAmISheet();
         console.log('✅ Who Am I シートの初期化完了');
         
-        // 🔔 習慣通知用シートの初期化
+        // ダイエット記録用シートの初期化
+        await initializeDietRecordsSheet();
+        console.log('✅ ダイエット記録シートの初期化完了');
+        
+        // 習慣通知用シートの初期化
         await initializeHabitNotificationSheet();
         console.log('✅ 習慣通知シートの初期化完了');
 
@@ -126,7 +132,33 @@ async function initializeBot() {
     }
 }
 
-// 🔔 習慣通知用シートの初期化
+// ダイエット記録用シートの初期化
+async function initializeDietRecordsSheet() {
+    try {
+        const data = await sheetsUtils.getSheetData('diet_records', 'A:N');
+        
+        // ヘッダーが存在しない場合は初期化
+        if (!data || data.length === 0 || !data[0] || data[0].length === 0) {
+            console.log('📝 diet_recordsシートのヘッダーを作成中...');
+            
+            const headers = [
+                'date', 'user_id', 'no_overeating', 'good_sleep', 'milo_count', 
+                'exercise_minutes', 'water_2l', 'breakfast_time_ok', 'lunch_time_ok',
+                'dinner_time_ok', 'snacks_list', 'stress_level', 'daily_note', 'created_at'
+            ];
+            
+            await sheetsUtils.saveToSheet('diet_records', headers);
+            console.log('✅ diet_recordsシートのヘッダーを作成しました');
+        } else {
+            console.log('✅ diet_recordsシートは既に存在します');
+        }
+    } catch (error) {
+        console.error('❌ diet_recordsシート初期化エラー:', error);
+        // エラーが発生してもBot起動は続行
+    }
+}
+
+// 習慣通知用シートの初期化
 async function initializeHabitNotificationSheet() {
     try {
         const data = await sheetsUtils.getSheetData('habit_notifications', 'A:L');
@@ -153,6 +185,8 @@ async function initializeHabitNotificationSheet() {
 }
 
 // bot.js - 修正版 Part 3: Readyイベント（重複削除版）
+
+// bot.js - 完全版 Part 2: Ready イベント・メッセージ処理・朝夜通知
 
 // ===== Ready イベント（1つのみ） =====
 client.once(Events.ClientReady, async readyClient => {
@@ -217,7 +251,7 @@ client.once(Events.ClientReady, async readyClient => {
         console.error('ルーティン通知システム初期化エラー:', error);
     }
 
-    // 🔔 Habit通知システムを初期化
+    // Habit通知システムを初期化
     try {
         console.log('🔔 Habit通知システム初期化中...');
         
@@ -238,8 +272,6 @@ client.once(Events.ClientReady, async readyClient => {
  
     console.log('🤖 Botが正常に起動しました！');
 });
-
-// bot.js - 修正版 Part 4: メッセージ処理・朝夜通知
 
 // ===== メッセージ処理（起床・就寝トリガー用） =====
 client.on(Events.MessageCreate, async message => {
@@ -343,7 +375,7 @@ async function sendMorningNotificationSet(channel, userId) {
     
     console.log(`🌅 朝の通知セット送信開始: ${userId}`);
     
-    // 🔒 送信済みフラグで重複防止
+    // 送信済みフラグで重複防止
     const sendingKey = `morning_sending_${userId}`;
     if (global[sendingKey]) {
         console.log(`⚠️ 朝の通知セット送信中につきスキップ: ${userId}`);
@@ -526,15 +558,18 @@ async function sendMorningNotificationSet(channel, userId) {
         console.log(`✅ 朝の通知セット送信完了: ${userId}`);
         
     } finally {
-        // 🔒 送信完了フラグをクリア（必ず実行）
+        // 送信完了フラグをクリア（必ず実行）
         delete global[sendingKey];
         console.log(`🔓 朝の通知セット送信フラグクリア: ${userId}`);
     }
 }
 
-// bot.js - 修正版 Part 6: 夜の通知セット・インタラクション処理開始
 
-// 夜の通知セットを送信（修正版）
+// bot.js - 修正版 Part 4: 夜の通知セット・インタラクション処理開始
+
+// bot.js - 完全版 Part 4: 夜の通知セット・ダイエット機能完全統合版
+
+// 夜の通知セットを送信（ダイエット機能統合版）
 async function sendEveningNotificationSet(channel, userId) {
     const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
     
@@ -554,16 +589,16 @@ async function sendEveningNotificationSet(channel, userId) {
                 .setTimestamp();
 
             const diaryRow = new ActionRowBuilder()
-    .addComponents(
-        new ButtonBuilder()
-            .setCustomId('diary_write_start')  // ← この部分が重要
-            .setLabel('📝 日記を書く')
-            .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-            .setCustomId('diary_skip')
-            .setLabel('⏭️ 後で書く')
-            .setStyle(ButtonStyle.Secondary)
-    );
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('diary_write_start')
+                        .setLabel('📝 日記を書く')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('diary_skip')
+                        .setLabel('⏭️ 後で書く')
+                        .setStyle(ButtonStyle.Secondary)
+                );
 
             await channel.send({ embeds: [diaryEmbed], components: [diaryRow] });
             await new Promise(resolve => setTimeout(resolve, 3000)); // 3秒待機
@@ -571,7 +606,37 @@ async function sendEveningNotificationSet(channel, userId) {
             console.error('日記リマインダー送信エラー:', error);
         }
 
-        // 2. 夜のルーティンリマインダー
+        // 2. ダイエットチェックリスト（新規追加）
+        try {
+            const dietEmbed = new EmbedBuilder()
+                .setTitle('📋 今日のダイエット記録')
+                .setDescription(`<@${userId}> 今日の取り組みを振り返りましょう`)
+                .addFields(
+                    { name: '📝 記録内容', value: '過食状況、睡眠、運動、食事時間など', inline: false },
+                    { name: '💪 継続の力', value: '毎日の記録が健康的な習慣につながります', inline: false }
+                )
+                .setColor('#4CAF50')
+                .setTimestamp();
+
+            const dietRow = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('diet_checklist_modal')
+                        .setLabel('📋 ダイエット記録')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('diet_skip')
+                        .setLabel('⏭️ 後で記録')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            await channel.send({ embeds: [dietEmbed], components: [dietRow] });
+            await new Promise(resolve => setTimeout(resolve, 3000)); // 3秒待機
+        } catch (error) {
+            console.error('ダイエット記録通知送信エラー:', error);
+        }
+
+        // 3. 夜のルーティンリマインダー
         try {
             if (routineHandler && routineHandler.routineService) {
                 let routines = [];
@@ -647,8 +712,655 @@ async function sendEveningNotificationSet(channel, userId) {
     }
 }
 
+// ===== ダイエット機能のヘルパー関数（段階的セレクトメニュー版） =====
+
+// ダイエットチェックリスト開始（段階的システム）
+// 現在のshowDietChecklistModal関数を以下に置き換え
+async function showDietChecklistModal(interaction) {
+    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+    
+    // 一時保存用のグローバル変数を初期化
+    global.tempDietData = global.tempDietData || {};
+    global.tempDietData[interaction.user.id] = {};
+    
+    // Step 1: 過食について
+    const embed = new EmbedBuilder()
+        .setTitle('📋 ダイエット記録 (1/6)')
+        .setDescription('今日は過食をしませんでしたか？')
+        .setColor('#4CAF50');
+
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('diet_step1_overeating')
+        .setPlaceholder('過食の状況を選択してください')
+        .addOptions([
+            {
+                label: '過食しなかった',
+                value: 'no_overeating_yes',
+                description: '今日は過食をしませんでした',
+                emoji: '✅'
+            },
+            {
+                label: '過食してしまった',
+                value: 'no_overeating_no',
+                description: '今日は過食をしてしまいました',
+                emoji: '❌'
+            }
+        ]);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+    
+    await interaction.reply({
+        embeds: [embed],
+        components: [row],
+        ephemeral: true
+    });
+}
+
+// Step 2: 睡眠について
+async function showDietStep2Sleep(interaction) {
+    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('📋 ダイエット記録 (2/6)')
+        .setDescription('今日は良い睡眠がとれましたか？（中途覚醒なし）')
+        .setColor('#4CAF50');
+
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('diet_step2_sleep')
+        .setPlaceholder('睡眠の質を選択してください')
+        .addOptions([
+            {
+                label: '良い睡眠がとれた',
+                value: 'good_sleep_yes',
+                description: '中途覚醒なしで良く眠れました',
+                emoji: '😴'
+            },
+            {
+                label: '睡眠に問題があった',
+                value: 'good_sleep_no',
+                description: '中途覚醒があったり眠りが浅かった',
+                emoji: '😰'
+            }
+        ]);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+    
+    await interaction.update({
+        embeds: [embed],
+        components: [row]
+    });
+}
+
+// Step 3: 水分摂取について
+async function showDietStep3Water(interaction) {
+    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('📋 ダイエット記録 (3/6)')
+        .setDescription('今日は水分を2L以上摂取しましたか？')
+        .setColor('#4CAF50');
+
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('diet_step3_water')
+        .setPlaceholder('水分摂取量を選択してください')
+        .addOptions([
+            {
+                label: '2L以上摂取した',
+                value: 'water_2l_yes',
+                description: '今日は十分な水分を摂取しました',
+                emoji: '💧'
+            },
+            {
+                label: '2L未満だった',
+                value: 'water_2l_no',
+                description: '水分摂取が少なかった',
+                emoji: '💧'
+            }
+        ]);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+    
+    await interaction.update({
+        embeds: [embed],
+        components: [row]
+    });
+}
+
+// Step 4: 食事時間について
+async function showDietStep4MealTimes(interaction) {
+    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('📋 ダイエット記録 (4/6)')
+        .setDescription('食事時間はどうでしたか？（複数選択可）')
+        .setColor('#4CAF50');
+
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('diet_step4_meals')
+        .setPlaceholder('規則正しく食べられた食事を選択してください')
+        .setMinValues(0)
+        .setMaxValues(3)
+        .addOptions([
+            {
+                label: '朝食を7-9時に食べた',
+                value: 'breakfast_time_ok',
+                description: '朝食を適切な時間に摂取しました',
+                emoji: '🌅'
+            },
+            {
+                label: '昼食を12-14時に食べた',
+                value: 'lunch_time_ok',
+                description: '昼食を適切な時間に摂取しました',
+                emoji: '☀️'
+            },
+            {
+                label: '夕食を18-20時に食べた',
+                value: 'dinner_time_ok',
+                description: '夕食を適切な時間に摂取しました',
+                emoji: '🌙'
+            }
+        ]);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+    
+    await interaction.update({
+        embeds: [embed],
+        components: [row]
+    });
+}
+
+// Step 5: 数値入力（ミロ・運動・間食）
+async function showDietStep5Numbers(interaction) {
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+    
+    const modal = new ModalBuilder()
+        .setCustomId('diet_step5_numbers')
+        .setTitle('ダイエット記録 (5/6)');
+
+    // ミロの回数
+    const miloCount = new TextInputBuilder()
+        .setCustomId('milo_count')
+        .setLabel('ミロで過食衝動を乗り切った回数（数字のみ）')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('例: 3（0の場合は空欄でも可）')
+        .setRequired(false)
+        .setMaxLength(2);
+
+    // エアロバイクの時間
+    const exerciseMinutes = new TextInputBuilder()
+        .setCustomId('exercise_minutes')
+        .setLabel('エアロバイクの時間（分、数字のみ）')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('例: 30（0の場合は空欄でも可）')
+        .setRequired(false)
+        .setMaxLength(3);
+
+    // 間食の内容
+    const snacks = new TextInputBuilder()
+        .setCustomId('snacks')
+        .setLabel('間食をした場合の食品名')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('例: クッキー2枚、りんご1個（なしの場合は空欄）')
+        .setRequired(false)
+        .setMaxLength(100);
+
+    const row1 = new ActionRowBuilder().addComponents(miloCount);
+    const row2 = new ActionRowBuilder().addComponents(exerciseMinutes);
+    const row3 = new ActionRowBuilder().addComponents(snacks);
+
+    modal.addComponents(row1, row2, row3);
+    
+    await interaction.showModal(modal);
+}
+
+// Step 6: 最終入力（ストレス度・ひとこと）
+async function showDietStep6Final(interaction) {
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+    
+    const modal = new ModalBuilder()
+        .setCustomId('diet_checklist_submit')
+        .setTitle('ダイエット記録 (6/6)');
+
+    // ストレス度
+    const stressLevel = new TextInputBuilder()
+        .setCustomId('stress_level')
+        .setLabel('今日のストレス度（1-5の数字）')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('1:とても楽 2:楽 3:普通 4:ストレス 5:とてもストレス')
+        .setRequired(false)
+        .setMaxLength(1);
+
+    // 今日のひとこと
+    const notes = new TextInputBuilder()
+        .setCustomId('daily_note')
+        .setLabel('今日のひとこと')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('今日の感想、気づいたこと、明日への意気込みなど')
+        .setRequired(false)
+        .setMaxLength(300);
+
+    const row1 = new ActionRowBuilder().addComponents(stressLevel);
+    const row2 = new ActionRowBuilder().addComponents(notes);
+
+    modal.addComponents(row1, row2);
+    
+    await interaction.showModal(modal);
+}
+
+// ===== ダイエット段階的処理のハンドラー関数 =====
+
+// Step 1: 過食についての処理
+async function handleDietStep1Overeating(interaction) {
+    const selectedValue = interaction.values[0];
+    const userId = interaction.user.id;
+    
+    // 一時保存
+    global.tempDietData[userId].no_overeating = selectedValue === 'no_overeating_yes';
+    
+    console.log('Step 1完了:', global.tempDietData[userId]);
+    
+    // Step 2へ
+    await showDietStep2Sleep(interaction);
+}
+
+// Step 2: 睡眠についての処理
+async function handleDietStep2Sleep(interaction) {
+    const selectedValue = interaction.values[0];
+    const userId = interaction.user.id;
+    
+    // 一時保存
+    global.tempDietData[userId].good_sleep = selectedValue === 'good_sleep_yes';
+    
+    console.log('Step 2完了:', global.tempDietData[userId]);
+    
+    // Step 3へ
+    await showDietStep3Water(interaction);
+}
+
+// Step 3: 水分摂取についての処理
+async function handleDietStep3Water(interaction) {
+    const selectedValue = interaction.values[0];
+    const userId = interaction.user.id;
+    
+    // 一時保存
+    global.tempDietData[userId].water_2l = selectedValue === 'water_2l_yes';
+    
+    console.log('Step 3完了:', global.tempDietData[userId]);
+    
+    // Step 4へ
+    await showDietStep4MealTimes(interaction);
+}
+
+// Step 4: 食事時間についての処理
+async function handleDietStep4Meals(interaction) {
+    const selectedValues = interaction.values;
+    const userId = interaction.user.id;
+    
+    // 一時保存（複数選択対応）
+    global.tempDietData[userId].breakfast_time = selectedValues.includes('breakfast_time_ok');
+    global.tempDietData[userId].lunch_time = selectedValues.includes('lunch_time_ok');
+    global.tempDietData[userId].dinner_time = selectedValues.includes('dinner_time_ok');
+    
+    console.log('Step 4完了:', global.tempDietData[userId]);
+    
+    // Step 5へ（モーダル表示）
+    await showDietStep5Numbers(interaction);
+}
+
+// Step 5: 数値入力の処理
+async function handleDietStep5Numbers(interaction) {
+    const miloCount = parseInt(interaction.fields.getTextInputValue('milo_count')) || 0;
+    const exerciseMinutes = parseInt(interaction.fields.getTextInputValue('exercise_minutes')) || 0;
+    const snacks = interaction.fields.getTextInputValue('snacks') || '';
+    
+    const userId = interaction.user.id;
+    
+    // 一時保存
+    global.tempDietData[userId].milo_count = miloCount;
+    global.tempDietData[userId].exercise_minutes = exerciseMinutes;
+    global.tempDietData[userId].snacks_list = snacks;
+    
+    console.log('Step 5完了:', global.tempDietData[userId]);
+    
+    // Step 6へ（最終モーダル表示）
+    await showDietStep6Final(interaction);
+}
+
+// Google Sheetsにダイエット記録を保存
+async function saveDietRecord(userId, date, data) {
+    const rowData = [
+        date,                           // A: date
+        userId,                         // B: user_id
+        data.no_overeating || false,    // C: no_overeating
+        data.good_sleep || false,       // D: good_sleep
+        data.milo_count || 0,           // E: milo_count
+        data.exercise_minutes || 0,     // F: exercise_minutes
+        data.water_2l || false,         // G: water_2l
+        data.breakfast_time || false,   // H: breakfast_time_ok
+        data.lunch_time || false,       // I: lunch_time_ok
+        data.dinner_time || false,      // J: dinner_time_ok
+        data.snacks_list || '',         // K: snacks_list
+        data.stress_level || null,      // L: stress_level
+        data.daily_note || '',          // M: daily_note
+        require('moment')().format('YYYY-MM-DD HH:mm:ss') // N: created_at
+    ];
+    
+    await sheetsUtils.saveToSheet('diet_records', rowData);
+}
+
+// 健康的なアプローチを重視した励ましメッセージ生成
+function generateHealthyEncouragement(achievementCount, data) {
+    const messages = [];
+    
+    // 記録をつけたこと自体を評価
+    messages.push('今日も記録をつけることができました。継続することが一番大切です。');
+    
+    // 過食について健康的なメッセージ
+    if (data.no_overeating) {
+        messages.push('過食をコントロールできたのは素晴らしいことです。');
+    } else if (!data.no_overeating && data.milo_count > 0) {
+        messages.push(`過食衝動に対してミロで対処する工夫ができています（${data.milo_count}回）。`);
+    }
+    
+    // 運動について
+    if (data.exercise_minutes >= 30) {
+        messages.push('30分以上の運動、体にも心にも良い影響があります。');
+    } else if (data.exercise_minutes > 0) {
+        messages.push('運動を実施できました。短時間でも続けることに意味があります。');
+    }
+    
+    // 全体的な達成について
+    if (achievementCount >= 4) {
+        messages.push('多くの健康的な習慣を実践できています。');
+    } else if (achievementCount >= 2) {
+        messages.push('着実に健康的な生活に向かっています。');
+    }
+    
+    return messages.join(' ');
+}
+
+// 最終的なダイエットチェックリスト送信処理（段階的システム版）
+async function handleDietChecklistSubmit(interaction) {
+    try {
+        // まず最初にdefer（timeout回避）
+        await interaction.deferReply();
+        
+        const userId = interaction.user.id;
+        const today = require('moment')().format('YYYY-MM-DD');
+        
+        // Step 6の入力を取得
+        const stressLevel = parseInt(interaction.fields.getTextInputValue('stress_level')) || null;
+        const dailyNote = interaction.fields.getTextInputValue('daily_note') || '';
+        
+        // 一時保存されたデータを取得
+        const tempData = global.tempDietData[userId] || {};
+        
+        console.log('最終データ:', tempData);
+        
+        // 最終データを作成
+        const finalData = {
+            no_overeating: tempData.no_overeating || false,
+            good_sleep: tempData.good_sleep || false,
+            water_2l: tempData.water_2l || false,
+            breakfast_time: tempData.breakfast_time || false,
+            lunch_time: tempData.lunch_time || false,
+            dinner_time: tempData.dinner_time || false,
+            milo_count: tempData.milo_count || 0,
+            exercise_minutes: tempData.exercise_minutes || 0,
+            snacks_list: tempData.snacks_list || '',
+            stress_level: stressLevel,
+            daily_note: dailyNote
+        };
+        
+        // Google Sheetsに保存
+        await saveDietRecord(userId, today, finalData);
+        
+        // 結果表示
+        const { EmbedBuilder } = require('discord.js');
+        const embed = new EmbedBuilder()
+            .setTitle('✅ ダイエット記録を保存しました')
+            .setDescription('今日の記録')
+            .setColor('#4CAF50')
+            .setTimestamp();
+        
+        // 達成項目の表示
+        const achievements = [];
+        if (finalData.no_overeating) achievements.push('過食なし');
+        if (finalData.good_sleep) achievements.push('良い睡眠');
+        if (finalData.water_2l) achievements.push('水分2L以上');
+        if (finalData.breakfast_time) achievements.push('朝食時間OK');
+        if (finalData.lunch_time) achievements.push('昼食時間OK');
+        if (finalData.dinner_time) achievements.push('夕食時間OK');
+        
+        if (achievements.length > 0) {
+            embed.addFields({
+                name: '🎯 達成項目',
+                value: achievements.join(', '),
+                inline: false
+            });
+        }
+        
+        // 数値項目の表示
+        const metrics = [];
+        if (finalData.milo_count > 0) metrics.push(`ミロ: ${finalData.milo_count}回`);
+        if (finalData.exercise_minutes > 0) metrics.push(`エアロバイク: ${finalData.exercise_minutes}分`);
+        
+        if (metrics.length > 0) {
+            embed.addFields({
+                name: '📊 実施記録',
+                value: metrics.join(', '),
+                inline: false
+            });
+        }
+        
+        if (finalData.snacks_list) {
+            embed.addFields({
+                name: '🍪 間食',
+                value: finalData.snacks_list,
+                inline: false
+            });
+        }
+        
+        if (finalData.stress_level) {
+            const stressEmoji = ['😫', '😰', '😐', '🙂', '😊'][finalData.stress_level - 1] || '😐';
+            embed.addFields({
+                name: '😌 ストレス度',
+                value: `${finalData.stress_level}/5 ${stressEmoji}`,
+                inline: true
+            });
+        }
+        
+        if (finalData.daily_note) {
+            embed.addFields({
+                name: '💭 今日のひとこと',
+                value: finalData.daily_note,
+                inline: false
+            });
+        }
+        
+        // 励ましメッセージ（健康的なアプローチを重視）
+        const encouragement = generateHealthyEncouragement(achievements.length, finalData);
+        if (encouragement) {
+            embed.addFields({
+                name: '💪 応援メッセージ',
+                value: encouragement,
+                inline: false
+            });
+        }
+        
+        // 一時データを削除
+        delete global.tempDietData[userId];
+        
+        // deferReply を使用しているので editReply で応答
+        await interaction.editReply({ embeds: [embed] });
+        
+        console.log('✅ ダイエット記録処理完了:', userId);
+        
+    } catch (error) {
+        console.error('ダイエット記録保存エラー:', error);
+        
+        try {
+            if (interaction.deferred) {
+                await interaction.editReply({
+                    content: 'ダイエット記録の保存中にエラーが発生しました。'
+                });
+            } else {
+                await interaction.reply({
+                    content: 'ダイエット記録の保存中にエラーが発生しました。',
+                    ephemeral: true
+                });
+            }
+        } catch (replyError) {
+            console.error('エラー応答失敗:', replyError);
+        }
+    }
+}
+
+// bot.js - 完全版 Part 5: ダイエットチェックリスト送信処理・インタラクション処理開始
+
+// ダイエットチェックリスト送信処理
+async function handleDietChecklistSubmit(interaction) {
+    try {
+        // まず最初にdefer（timeout回避）
+        await interaction.deferReply();
+        
+        const basicItems = interaction.fields.getTextInputValue('basic_items') || '';
+        const miloCount = parseInt(interaction.fields.getTextInputValue('milo_count')) || 0;
+        const exerciseMinutes = parseInt(interaction.fields.getTextInputValue('exercise_minutes')) || 0;
+        const snacks = interaction.fields.getTextInputValue('snacks') || '';
+        const notes = interaction.fields.getTextInputValue('notes') || '';
+        
+        const userId = interaction.user.id;
+        const today = require('moment')().format('YYYY-MM-DD');
+        
+        // 基本項目の解析（○が含まれているかチェック）
+        const checkItems = {
+            no_overeating: basicItems.includes('過食なし') && basicItems.includes('○'),
+            good_sleep: basicItems.includes('良い睡眠') && basicItems.includes('○'),
+            water_2l: basicItems.includes('水分2L') && basicItems.includes('○'),
+            breakfast_time: basicItems.includes('朝食時間') && basicItems.includes('○'),
+            lunch_time: basicItems.includes('昼食時間') && basicItems.includes('○'),
+            dinner_time: basicItems.includes('夕食時間') && basicItems.includes('○')
+        };
+        
+        // ストレス度の抽出
+        const stressMatch = notes.match(/ストレス度[：:]\s*([1-5])/);
+        const stressLevel = stressMatch ? parseInt(stressMatch[1]) : null;
+        
+        // 今日のひとことの抽出
+        const noteLines = notes.split('\n').filter(line => 
+            !line.includes('ストレス度') && line.trim().length > 0
+        );
+        const dailyNote = noteLines.length > 0 ? noteLines.join('\n') : '';
+        
+        // Google Sheetsに保存
+        await saveDietRecord(userId, today, {
+            ...checkItems,
+            milo_count: miloCount,
+            exercise_minutes: exerciseMinutes,
+            snacks_list: snacks,
+            stress_level: stressLevel,
+            daily_note: dailyNote
+        });
+        
+        // 結果表示
+        const { EmbedBuilder } = require('discord.js');
+        const embed = new EmbedBuilder()
+            .setTitle('ダイエット記録を保存しました')
+            .setDescription('今日の記録')
+            .setColor('#4CAF50')
+            .setTimestamp();
+        
+        // 達成項目の表示
+        const achievements = [];
+        if (checkItems.no_overeating) achievements.push('過食なし');
+        if (checkItems.good_sleep) achievements.push('良い睡眠');
+        if (checkItems.water_2l) achievements.push('水分2L以上');
+        if (checkItems.breakfast_time) achievements.push('朝食時間OK');
+        if (checkItems.lunch_time) achievements.push('昼食時間OK');
+        if (checkItems.dinner_time) achievements.push('夕食時間OK');
+        
+        if (achievements.length > 0) {
+            embed.addFields({
+                name: '達成項目',
+                value: achievements.join(', '),
+                inline: false
+            });
+        }
+        
+        // 数値項目の表示
+        const metrics = [];
+        if (miloCount > 0) metrics.push(`ミロ: ${miloCount}回`);
+        if (exerciseMinutes > 0) metrics.push(`エアロバイク: ${exerciseMinutes}分`);
+        
+        if (metrics.length > 0) {
+            embed.addFields({
+                name: '実施記録',
+                value: metrics.join(', '),
+                inline: false
+            });
+        }
+        
+        if (snacks) {
+            embed.addFields({
+                name: '間食',
+                value: snacks,
+                inline: false
+            });
+        }
+        
+        if (stressLevel) {
+            embed.addFields({
+                name: 'ストレス度',
+                value: `${stressLevel}/5`,
+                inline: true
+            });
+        }
+        
+        if (dailyNote) {
+            embed.addFields({
+                name: '今日のひとこと',
+                value: dailyNote,
+                inline: false
+            });
+        }
+        
+        // 励ましメッセージ
+        const encouragement = generateDietEncouragement(achievements.length, miloCount, exerciseMinutes);
+        if (encouragement) {
+            embed.addFields({
+                name: '応援メッセージ',
+                value: encouragement,
+                inline: false
+            });
+        }
+        
+        // deferReply を使用しているので editReply で応答
+        await interaction.editReply({ embeds: [embed] });
+        
+    } catch (error) {
+        console.error('ダイエット記録保存エラー:', error);
+        
+        try {
+            if (interaction.deferred) {
+                await interaction.editReply({
+                    content: 'ダイエット記録の保存中にエラーが発生しました。'
+                });
+            } else {
+                await interaction.reply({
+                    content: 'ダイエット記録の保存中にエラーが発生しました。',
+                    ephemeral: true
+                });
+            }
+        } catch (replyError) {
+            console.error('エラー応答失敗:', replyError);
+        }
+    }
+}
+
+
 // ===== インタラクション処理（修正版・defer問題解決） =====
-// ===== インタラクション処理（修正版・Part 1） =====
+// ===== インタラクション処理（修正版） =====
 client.on(Events.InteractionCreate, async interaction => {
     try {
         // ===== スラッシュコマンド処理 =====
@@ -671,6 +1383,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 case 'whoami':
                     await whoamiCommands.handleCommand(interaction);
                     break;
+                case 'diet':
+                    await dietCommands.handleCommand(interaction);
+                    break;
                 case 'test-notification':
                     await handleTestNotification(interaction);
                     break;
@@ -687,6 +1402,13 @@ client.on(Events.InteractionCreate, async interaction => {
             
             try {
                 // ===== モーダル表示系ボタン（deferなし・最優先） =====
+                
+                // ダイエットチェックリストボタン処理（直接実装）
+                if (customId === 'diet_checklist_modal') {
+                    console.log('📋 ダイエットチェックリストボタンを検出');
+                    await showDietChecklistModal(interaction);
+                    return;
+                }
                 
                 // ルーティンボタン処理
                 if (customId.startsWith('routine_') || 
@@ -735,7 +1457,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     }
                 }
 
-                // Who Am I ボタン処理
+            // Who Am I ボタン処理
                 if (customId.startsWith('whoami_') || customId === 'whoami_setup_start') {
                     console.log('🌟 Who Am I ボタンを検出:', customId);
                     await whoamiCommands.handleButtonInteraction(interaction);
@@ -764,20 +1486,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     return;
                 }
 
-                // クイック体重記録ボタン（全体用）
-                if (customId === 'quick_weight_record') {
-                    console.log('⚖️ クイック体重記録ボタンを検出');
-                    await showQuickWeightModal(interaction);
-                    return;
-                }
-                
-                // 日記を書くボタン（全体用）
-                if (customId === 'write_diary') {
-                    console.log('📝 日記を書くボタンを検出');
-                    await showDiaryModal(interaction);
-                    return;
-                }
-                
                 // 習慣追加ボタン
                 if (customId === 'add_habit') {
                     console.log('🏃‍♂️ 習慣追加ボタンを検出');
@@ -785,14 +1493,14 @@ client.on(Events.InteractionCreate, async interaction => {
                     return;
                 }
 
-                // ===== 🎯 週次目標設定ボタン（修正版・deferなし） =====
+                // 週次目標設定ボタン
                 if (customId === 'set_weekly_goals') {
                     console.log('🎯 週次目標設定ボタンを検出');
                     await showWeeklyGoalsModal(interaction);
                     return;
                 }
 
-                // 🔔 Habit通知関連のボタン処理
+                // Habit通知関連のボタン処理
                 if (customId.startsWith('habit_quick_done_') || 
                     customId.startsWith('habit_snooze_') ||
                     customId === 'habit_calendar_view' ||
@@ -815,7 +1523,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     }
                 }
 
-                // ===== ここ以降のボタンはdeferしてから処理 =====
+                // ここ以降のボタンはdeferしてから処理
                 if (!interaction.deferred && !interaction.replied) {
                     if (customId.includes('quick_done') || customId.includes('snooze')) {
                         await interaction.deferUpdate();
@@ -824,9 +1532,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     }
                 }
 
-                // ===== Part 2: スキップボタン処理 =====
-                
-                // 🌅 起床通知のスキップボタン処理
+                // スキップボタン処理
                 if (customId === 'whoami_skip') {
                     await interaction.editReply({
                         content: '⏭️ Who Am I をスキップしました。今日も良い一日を！',
@@ -855,139 +1561,15 @@ client.on(Events.InteractionCreate, async interaction => {
                         components: []
                     });
                     return;
-                }
-                
-                // ===== 🎯 統合目標ダッシュボードのボタン処理 =====
-                if (customId === 'goals_dashboard') {
-                    // ダッシュボードに戻るボタン
-                    if (!interaction.deferred) await interaction.deferUpdate();
-                    await goalsCommands.handleGoalsDashboard(interaction);
-                    
-                } else if (customId === 'goals_refresh') {
-                    // 更新ボタン（現在のページを再表示）
-                    if (!interaction.deferred) await interaction.deferUpdate();
-                    
-                    // 現在表示中のページを判定して適切な関数を呼び出し
-                    const embed = interaction.message.embeds[0];
-                    const title = embed?.title || '';
-                    
-                    if (title.includes('統合目標ダッシュボード')) {
-                        await goalsCommands.handleGoalsDashboard(interaction);
-                    } else if (title.includes('達成バッジ・実績')) {
-                        await goalsCommands.handleGoalsAchievements(interaction);
-                    } else if (title.includes('目標達成カレンダー')) {
-                        await goalsCommands.handleGoalsCalendar(interaction);
-                    } else {
-                        // デフォルトはダッシュボード
-                        await goalsCommands.handleGoalsDashboard(interaction);
-                    }
-                    
-                } else if (customId === 'goals_achievements') {
-                    // 実績表示ボタン（ダッシュボードから）
-                    if (!interaction.deferred) await interaction.deferUpdate();
-                    await goalsCommands.handleGoalsAchievements(interaction);
-                    
-                } else if (customId === 'goals_calendar') {
-                    // カレンダー表示ボタン（ダッシュボードから）
-                    console.log('🔍 goals_calendarボタンが押されました');
-                    
-                    try {
-                        if (!interaction.deferred && !interaction.replied) {
-                            console.log('🔄 deferUpdateを実行中...');
-                            await interaction.deferUpdate();
-                        }
-                        
-                        console.log('📅 goalsCommands.handleGoalsCalendarを呼び出し中...');
-                        await goalsCommands.handleGoalsCalendar(interaction);
-                        console.log('✅ カレンダー表示完了');
-                        
-                    } catch (error) {
-                        console.error('❌ goals_calendarボタンエラー:', error);
-                        
-                        try {
-                            if (interaction.deferred) {
-                                await interaction.editReply({ 
-                                    content: '❌ カレンダーの表示中にエラーが発生しました。', 
-                                    embeds: [],
-                                    components: []
-                                });
-                            } else if (!interaction.replied) {
-                                await interaction.reply({ 
-                                    content: '❌ カレンダーの表示中にエラーが発生しました。', 
-                                    ephemeral: true
-                                });
-                            }
-                        } catch (replyError) {
-                            console.error('エラーメッセージ送信失敗:', replyError);
-                        }
-                    }
-                    
-                } else if (customId.startsWith('goals_calendar_') && customId !== 'goals_calendar_today') {
-                    // カレンダーナビゲーション処理（前月/次月）
-                    if (!interaction.deferred) await interaction.deferUpdate();
-                    await handleGoalsCalendarNavigation(interaction);
-                    
-                } else if (customId === 'goals_calendar_today') {
-                    // 今月に戻るボタン
-                    if (!interaction.deferred) await interaction.deferUpdate();
-                    const today = new Date();
-                    const year = today.getFullYear();
-                    const month = today.getMonth() + 1;
-                    await showGoalsCalendar(interaction, year, month);
-                    
-                // ===== 習慣関連ボタン処理 =====
-                } else if (customId === 'quick_done') {
-                    // 習慣完了ボタン - 習慣一覧を表示
-                    await showHabitQuickDoneSelect(interaction);
-                    
-                } else if (customId === 'habit_list') {
-                    // 習慣一覧ボタン - 習慣一覧を表示
-                    await showHabitListMessage(interaction);
-                    
-                } else if (customId === 'view_weekly_stats') {
-                    // 週次統計を表示
-                    await showWeeklyStats(interaction);
-                    
-                } else if (customId.startsWith('habit_delete_confirm_')) {
-                    // 習慣削除確認
-                    const habitId = customId.replace('habit_delete_confirm_', '');
-                    await habitCommands.executeHabitDelete(interaction, habitId);
-                    
-                } else if (customId === 'habit_delete_cancel') {
-                    // 習慣削除キャンセル
-                    await interaction.update({ 
-                        content: '削除をキャンセルしました。',
+                } else if (customId === 'diet_skip') {
+                    await interaction.editReply({
+                        content: '⏭️ ダイエット記録を後で入力します。健康的な生活を心がけましょう！',
                         embeds: [],
                         components: []
                     });
-                    
-                } else if (customId.startsWith('calendar_')) {
-                    // カレンダーナビゲーション処理（習慣用）
-                    await habitCommands.handleCalendarNavigation(interaction);
-                    
-                // ===== 日記関連ボタン処理 =====
-                } else if (customId === 'diary_goal_frequency') {
-                    await handleDiaryGoalFrequency(interaction);
-                    
-                } else if (customId === 'diary_goal_mood') {
-                    await handleDiaryGoalMood(interaction);
-                    
-                } else if (customId === 'diary_goal_review') {
-                    await handleDiaryGoalReview(interaction);
-                    
-                } else if (customId === 'diary_goal_progress_button') {
-                    await handleDiaryGoalProgressButton(interaction);
-                    
-                } else if (customId === 'diary_review_save') {
-                    // 振り返り保存ボタン
-                    await handleDiaryReviewSave(interaction);
-                    
-                } else if (customId === 'diary_review_share') {
-                    // 振り返り詳細表示ボタン
-                    await handleDiaryReviewShare(interaction);
-                    
+                    return;
                 } else {
-                    // ===== その他の既存ボタン処理 =====
+                    // その他の既存ボタン処理
                     await interactionHandler.handleInteraction(interaction);
                 }
                 
@@ -1010,30 +1592,51 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
-        // ===== Part 3: セレクトメニュー処理 =====
+        // ===== セレクトメニュー処理 =====
         } else if (interaction.isStringSelectMenu()) {
             const customId = interaction.customId;
+
+            try {
+        // ダイエット記録の段階的セレクトメニュー処理
+        if (customId === 'diet_step1_overeating') {
+            await handleDietStep1Overeating(interaction);
+        } else if (customId === 'diet_step2_sleep') {
+            await handleDietStep2Sleep(interaction);
+        } else if (customId === 'diet_step3_water') {
+            await handleDietStep3Water(interaction);
+        } else if (customId === 'diet_step4_meals') {
+            await handleDietStep4Meals(interaction);
+        } else if (customId === 'habit_done_select') {
+            await habitCommands.handleHabitDoneSelect(interaction);
+        } else if (customId === 'habit_edit_select') {
+            await habitCommands.handleHabitEditSelect(interaction);
+        } else if (customId === 'habit_delete_select') {
+            await habitCommands.handleHabitDeleteSelect(interaction);
+        } else if (customId === 'diary_mood_first_select') {
+            await handleDiaryMoodFirstSelect(interaction);
+        } else {
+            await interactionHandler.handleInteraction(interaction);
+        }
+    } catch (error) {
+        console.error('セレクトメニュー処理エラー:', error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+                content: 'セレクトメニュー処理中にエラーが発生しました。', 
+                ephemeral: true
+            });
+        }
+    }
             
             try {
                 if (customId === 'habit_done_select') {
-                    // 習慣完了選択
                     await habitCommands.handleHabitDoneSelect(interaction);
                 } else if (customId === 'habit_edit_select') {
-                    // 習慣編集選択
                     await habitCommands.handleHabitEditSelect(interaction);
                 } else if (customId === 'habit_delete_select') {
-                    // 習慣削除選択
                     await habitCommands.handleHabitDeleteSelect(interaction);
-                } else if (customId === 'quick_done_select') {
-                    // クイック完了選択
-                    await handleQuickDoneSelect(interaction);
                 } else if (customId === 'diary_mood_first_select') {
-                    // 日記気分選択（最初）
                     await handleDiaryMoodFirstSelect(interaction);
-                } else if (customId === 'diary_content_modal') {
-                    await handleDiaryContentSubmit(interaction);
                 } else {
-                    // 既存のセレクトメニュー処理
                     await interactionHandler.handleInteraction(interaction);
                 }
             } catch (error) {
@@ -1057,41 +1660,31 @@ client.on(Events.InteractionCreate, async interaction => {
                     if (handled) return;
                 }
                 
-                // ===== 🎯 週次目標設定モーダル処理（修正版） =====
-                if (customId === 'weekly_goals_modal') {
-                    console.log('🎯 週次目標設定モーダル送信を検出');
-                    await handleWeeklyGoalsSubmit(interaction);
+                // ダイエット記録モーダル処理
+                if (customId === 'diet_step5_numbers') {
+                    await handleDietStep5Numbers(interaction);
+                    return;
+                }
+                
+                // ダイエットチェックリスト送信処理（直接実装）
+                if (customId === 'diet_checklist_submit') {
+                    await handleDietChecklistSubmit(interaction);
                     return;
                 }
                 
                 // 既存のモーダル処理
                 if (customId === 'quick_weight_modal') {
-                    // クイック体重記録の処理
                     await handleQuickWeightSubmit(interaction);
                 } else if (customId === 'weekly_goals_modal') {
-                    // 週次目標設定の処理（上で処理済みなので削除可能）
                     await handleWeeklyGoalsSubmit(interaction);
-                } else if (customId === 'diary_modal') {
-                    // 旧日記モーダル（削除予定）
-                    await handleDiarySubmit(interaction);
                 } else if (customId === 'diary_content_modal') {
-                    // 新日記本文モーダル
                     await handleDiaryContentSubmit(interaction);
                 } else if (customId === 'add_habit_modal') {
-                    // 習慣追加モーダルの処理
                     await handleAddHabitSubmit(interaction);
                 } else if (customId.startsWith('habit_edit_modal_')) {
-                    // 習慣編集モーダル
                     const habitId = customId.replace('habit_edit_modal_', '');
                     await habitCommands.saveHabitEdit(interaction, habitId);
-                } else if (customId === 'diary_goal_frequency_modal') {
-                    await handleDiaryGoalFrequencySubmit(interaction);
-                } else if (customId === 'diary_goal_mood_modal') {
-                    await handleDiaryGoalMoodSubmit(interaction);
-                } else if (customId === 'diary_goal_review_modal') {
-                    await handleDiaryGoalReviewSubmit(interaction);
                 } else {
-                    // 既存のモーダル処理（日記、習慣など）
                     await interactionHandler.handleInteraction(interaction);
                 }
             } catch (error) {
@@ -1118,6 +1711,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 });
+
 
 // bot.js - 修正版 Part 9: ヘルパー関数1 - 統合目標・通知テスト
 
@@ -2238,13 +2832,64 @@ async function showHabitListMessage(interaction) {
 }
 
 
-// bot.js - 修正版 Part 13: プロセス終了処理・ログイン
+// ===== 通知テスト関数 =====
+async function handleTestNotification(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+    
+    if (!notificationManager) {
+        await interaction.reply({ 
+            content: '❌ 通知システムが初期化されていません。', 
+            ephemeral: true 
+        });
+        return;
+    }
+    
+    try {
+        switch (subcommand) {
+            case 'evening':
+                const eveningChannel = interaction.channel;
+                const eveningUserId = interaction.user.id;
+                
+                await sendEveningNotificationSet(eveningChannel, eveningUserId);
+                
+                await interaction.reply({ 
+                    content: '🌙 夜の通知セット（ダイエット記録付き）をテスト送信しました。', 
+                    ephemeral: true 
+                });
+                break;
+
+            case 'morning':
+                const channel = interaction.channel;
+                const userId = interaction.user.id;
+                
+                await sendMorningNotificationSet(channel, userId);
+                
+                await interaction.reply({ 
+                    content: '🌅 朝の通知セットをテスト送信しました。', 
+                    ephemeral: true 
+                });
+                break;
+
+            default:
+                await notificationManager.testNotification(subcommand);
+                await interaction.reply({ 
+                    content: `📝 ${subcommand} 通知をテスト送信しました。`, 
+                    ephemeral: true 
+                });
+        }
+    } catch (error) {
+        console.error('通知テストエラー:', error);
+        await interaction.reply({ 
+            content: '❌ 通知テスト中にエラーが発生しました。', 
+            ephemeral: true 
+        });
+    }
+}
 
 // ===== プロセス終了時の処理 =====
 process.on('SIGINT', () => {
     console.log('Botを停止中...');
     
-    // 通知システムを停止
     if (routineHandler && routineHandler.notificationService) {
         routineHandler.notificationService.shutdown();
     }
@@ -2253,7 +2898,6 @@ process.on('SIGINT', () => {
         notificationManager.shutdown();
     }
    
-    // 🔔 Habit通知システムを停止
     if (habitNotificationService) {
         habitNotificationService.shutdown();
     }
@@ -2265,7 +2909,6 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     console.log('Botを停止中...');
     
-    // 通知システムを停止
     if (routineHandler && routineHandler.notificationService) {
         routineHandler.notificationService.shutdown();
     }
@@ -2274,7 +2917,6 @@ process.on('SIGTERM', () => {
         notificationManager.shutdown();
     }
 
-    // 🔔 Habit通知システムを停止
     if (habitNotificationService) {
         habitNotificationService.shutdown();
     }
@@ -2285,13 +2927,3 @@ process.on('SIGTERM', () => {
 
 // ===== ログイン =====
 client.login(process.env.DISCORD_TOKEN);
-
-// ===== エクスポート（テスト用） =====
-module.exports = {
-    client,
-    // テスト用の関数エクスポート（必要に応じて）
-    showQuickWeightModal,
-    showDiaryModal,
-    showAddHabitModal,
-    showWeeklyGoalsModal
-};
