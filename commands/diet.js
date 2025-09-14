@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const moment = require('moment');
 const sheetsUtils = require('../utils/sheets');
 
@@ -119,260 +119,38 @@ async function handleCommand(interaction) {
     }
 }
 
-// チェックリスト記録
+// チェックリスト記録（簡素化版、メイン機能は夜の通知から）
 async function handleDietChecklist(interaction) {
-    const embed = new EmbedBuilder()
-        .setTitle('📋 今日のダイエット記録')
-        .setDescription('今日の取り組みを記録しましょう')
-        .setColor('#4CAF50')
-        .setTimestamp();
-
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('diet_checklist_modal')
-                .setLabel('📝 記録を開始')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-    await interaction.reply({
-        embeds: [embed],
-        components: [row]
-    });
-}
-
-// チェックリストモーダル表示
-async function showChecklistModal(interaction) {
-    const modal = new ModalBuilder()
-        .setCustomId('diet_checklist_submit')
-        .setTitle('今日のダイエット記録');
-
-    // 基本的な Yes/No 項目
-    const basicItems = new TextInputBuilder()
-        .setCustomId('basic_items')
-        .setLabel('達成項目（該当するものに○）')
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('例: 過食なし○ 良い睡眠○ 水分2L○ 朝食時間○ 昼食時間○ 夕食時間○')
-        .setRequired(false)
-        .setMaxLength(200);
-
-    // ミロの回数
-    const miloCount = new TextInputBuilder()
-        .setCustomId('milo_count')
-        .setLabel('ミロで過食衝動を乗り切った回数（数字のみ）')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: 3')
-        .setRequired(false)
-        .setMaxLength(2);
-
-    // エアロバイクの時間
-    const exerciseMinutes = new TextInputBuilder()
-        .setCustomId('exercise_minutes')
-        .setLabel('エアロバイクの時間（分、数字のみ）')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: 30')
-        .setRequired(false)
-        .setMaxLength(3);
-
-    // 間食の内容
-    const snacks = new TextInputBuilder()
-        .setCustomId('snacks')
-        .setLabel('間食をした場合の食品名')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('例: クッキー2枚、りんご1個')
-        .setRequired(false)
-        .setMaxLength(100);
-
-    // ストレス度と今日のひとこと
-    const notes = new TextInputBuilder()
-        .setCustomId('notes')
-        .setLabel('ストレス度（1-5）と今日のひとこと')
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('ストレス度: 3\n今日のひとこと: 運動できて気分が良かった')
-        .setRequired(false)
-        .setMaxLength(300);
-
-    const row1 = new ActionRowBuilder().addComponents(basicItems);
-    const row2 = new ActionRowBuilder().addComponents(miloCount);
-    const row3 = new ActionRowBuilder().addComponents(exerciseMinutes);
-    const row4 = new ActionRowBuilder().addComponents(snacks);
-    const row5 = new ActionRowBuilder().addComponents(notes);
-
-    modal.addComponents(row1, row2, row3, row4, row5);
-    
-    await interaction.showModal(modal);
-}
-
-// チェックリスト送信処理
-async function handleChecklistSubmit(interaction) {
-    const basicItems = interaction.fields.getTextInputValue('basic_items') || '';
-    const miloCount = parseInt(interaction.fields.getTextInputValue('milo_count')) || 0;
-    const exerciseMinutes = parseInt(interaction.fields.getTextInputValue('exercise_minutes')) || 0;
-    const snacks = interaction.fields.getTextInputValue('snacks') || '';
-    const notes = interaction.fields.getTextInputValue('notes') || '';
-    
     try {
-        const userId = interaction.user.id;
-        const today = moment().format('YYYY-MM-DD');
+        console.log('ダイエットチェックリスト処理開始');
         
-        // 基本項目の解析（○が含まれているかチェック）
-        const checkItems = {
-            no_overeating: basicItems.includes('過食なし') && basicItems.includes('○'),
-            good_sleep: basicItems.includes('良い睡眠') && basicItems.includes('○'),
-            water_2l: basicItems.includes('水分2L') && basicItems.includes('○'),
-            breakfast_time: basicItems.includes('朝食時間') && basicItems.includes('○'),
-            lunch_time: basicItems.includes('昼食時間') && basicItems.includes('○'),
-            dinner_time: basicItems.includes('夕食時間') && basicItems.includes('○')
-        };
-        
-        // ストレス度の抽出
-        const stressMatch = notes.match(/ストレス度[：:]\s*([1-5])/);
-        const stressLevel = stressMatch ? parseInt(stressMatch[1]) : null;
-        
-        // 今日のひとことの抽出
-        const noteLines = notes.split('\n').filter(line => 
-            !line.includes('ストレス度') && line.trim().length > 0
-        );
-        const dailyNote = noteLines.length > 0 ? noteLines.join('\n') : '';
-        
-        // Google Sheetsに保存
-        await saveDietRecord(userId, today, {
-            ...checkItems,
-            milo_count: miloCount,
-            exercise_minutes: exerciseMinutes,
-            snacks_list: snacks,
-            stress_level: stressLevel,
-            daily_note: dailyNote
-        });
-        
-        // 結果表示
         const embed = new EmbedBuilder()
-            .setTitle('✅ ダイエット記録を保存しました')
-            .setDescription('今日の記録')
+            .setTitle('📋 ダイエット記録機能について')
+            .setDescription('ダイエット記録は夜の通知から利用できます。')
+            .addFields(
+                { name: '利用方法', value: '「おやすみ」と送信すると夜の通知でダイエット記録ボタンが表示されます', inline: false },
+                { name: '記録項目', value: '• 過食の有無\n• 睡眠の質\n• 運動実施状況\n• 食事時間\n• ストレス度', inline: false }
+            )
             .setColor('#4CAF50')
             .setTimestamp();
         
-        // 達成項目の表示
-        const achievements = [];
-        if (checkItems.no_overeating) achievements.push('過食なし');
-        if (checkItems.good_sleep) achievements.push('良い睡眠');
-        if (checkItems.water_2l) achievements.push('水分2L以上');
-        if (checkItems.breakfast_time) achievements.push('朝食時間OK');
-        if (checkItems.lunch_time) achievements.push('昼食時間OK');
-        if (checkItems.dinner_time) achievements.push('夕食時間OK');
-        
-        if (achievements.length > 0) {
-            embed.addFields({
-                name: '🎯 達成項目',
-                value: achievements.join(', '),
-                inline: false
-            });
-        }
-        
-        // 数値項目の表示
-        const metrics = [];
-        if (miloCount > 0) metrics.push(`ミロ: ${miloCount}回`);
-        if (exerciseMinutes > 0) metrics.push(`エアロバイク: ${exerciseMinutes}分`);
-        
-        if (metrics.length > 0) {
-            embed.addFields({
-                name: '📊 実施記録',
-                value: metrics.join(', '),
-                inline: false
-            });
-        }
-        
-        if (snacks) {
-            embed.addFields({
-                name: '🍪 間食',
-                value: snacks,
-                inline: false
-            });
-        }
-        
-        if (stressLevel) {
-            const stressEmoji = ['😫', '😰', '😐', '🙂', '😊'][stressLevel - 1] || '😐';
-            embed.addFields({
-                name: '😌 ストレス度',
-                value: `${stressLevel}/5 ${stressEmoji}`,
-                inline: true
-            });
-        }
-        
-        if (dailyNote) {
-            embed.addFields({
-                name: '💭 今日のひとこと',
-                value: dailyNote,
-                inline: false
-            });
-        }
-        
-        // 励ましメッセージ
-        const encouragement = generateEncouragement(achievements.length, miloCount, exerciseMinutes);
-        if (encouragement) {
-            embed.addFields({
-                name: '💪 応援メッセージ',
-                value: encouragement,
-                inline: false
-            });
-        }
-        
-        await interaction.reply({ embeds: [embed] });
-        
-    } catch (error) {
-        console.error('ダイエット記録保存エラー:', error);
         await interaction.reply({
-            content: 'ダイエット記録の保存中にエラーが発生しました。',
+            embeds: [embed],
             ephemeral: true
         });
+        
+        console.log('ダイエットチェックリスト処理完了');
+        
+    } catch (error) {
+        console.error('ダイエットチェックリスト処理エラー:', error);
+        
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: 'エラーが発生しました。',
+                ephemeral: true
+            });
+        }
     }
-}
-
-// Google Sheetsにダイエット記録を保存
-async function saveDietRecord(userId, date, data) {
-    const rowData = [
-        date,                           // A: date
-        userId,                         // B: user_id
-        data.no_overeating || false,    // C: no_overeating
-        data.good_sleep || false,       // D: good_sleep
-        data.milo_count || 0,           // E: milo_count
-        data.exercise_minutes || 0,     // F: exercise_minutes
-        data.water_2l || false,         // G: water_2l
-        data.breakfast_time || false,   // H: breakfast_time_ok
-        data.lunch_time || false,       // I: lunch_time_ok
-        data.dinner_time || false,      // J: dinner_time_ok
-        data.snacks_list || '',         // K: snacks_list
-        data.stress_level || null,      // L: stress_level
-        data.daily_note || '',          // M: daily_note
-        moment().format('YYYY-MM-DD HH:mm:ss') // N: created_at
-    ];
-    
-    await sheetsUtils.saveToSheet('diet_records', rowData);
-}
-
-// 励ましメッセージ生成
-function generateEncouragement(achievementCount, miloCount, exerciseMinutes) {
-    const messages = [];
-    
-    if (achievementCount >= 5) {
-        messages.push('素晴らしい一日でした！多くの目標を達成できています。');
-    } else if (achievementCount >= 3) {
-        messages.push('良いペースで継続できています。この調子で頑張りましょう。');
-    } else if (achievementCount >= 1) {
-        messages.push('今日も記録をつけることができました。小さな一歩も大切です。');
-    }
-    
-    if (miloCount > 0) {
-        messages.push(`過食衝動を${miloCount}回乗り切れたのは大きな成果です。`);
-    }
-    
-    if (exerciseMinutes >= 30) {
-        messages.push('30分以上の運動、素晴らしいです！');
-    } else if (exerciseMinutes > 0) {
-        messages.push('運動を実施できました。継続が力になります。');
-    }
-    
-    return messages.length > 0 ? messages.join(' ') : null;
 }
 
 // 過去の記録表示
@@ -381,15 +159,16 @@ async function handleDietView(interaction) {
     const userId = interaction.user.id;
     
     try {
+        await interaction.deferReply({ ephemeral: true });
+        
         const startDate = moment().subtract(days - 1, 'days').format('YYYY-MM-DD');
         const endDate = moment().format('YYYY-MM-DD');
         
         const records = await getDietRecordsInRange(userId, startDate, endDate);
         
         if (records.length === 0) {
-            await interaction.reply({
+            await interaction.editReply({
                 content: `過去${days}日間のダイエット記録がありません。`,
-                ephemeral: true
             });
             return;
         }
@@ -435,14 +214,21 @@ async function handleDietView(interaction) {
             });
         }
         
-        await interaction.reply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [embed] });
         
     } catch (error) {
         console.error('ダイエット記録表示エラー:', error);
-        await interaction.reply({
-            content: 'ダイエット記録の取得中にエラーが発生しました。',
-            ephemeral: true
-        });
+        
+        if (interaction.deferred) {
+            await interaction.editReply({
+                content: 'ダイエット記録の取得中にエラーが発生しました。',
+            });
+        } else {
+            await interaction.reply({
+                content: 'ダイエット記録の取得中にエラーが発生しました。',
+                ephemeral: true
+            });
+        }
     }
 }
 
@@ -496,52 +282,44 @@ async function getDietRecordsInRange(userId, startDate, endDate) {
     }
 }
 
-// ボタンインタラクション処理
-async function handleButtonInteraction(interaction) {
-    const customId = interaction.customId;
-    
-    if (customId === 'diet_checklist_modal') {
-        await showChecklistModal(interaction);
-    }
-}
-
-// モーダル送信処理
-async function handleModalSubmit(interaction) {
-    const customId = interaction.customId;
-    
-    if (customId === 'diet_checklist_submit') {
-        await handleChecklistSubmit(interaction);
-    }
-}
-
 // プレースホルダー関数（後で実装）
 async function handleDietCalendar(interaction) {
-    await interaction.reply({ content: 'カレンダー表示機能は実装中です。', ephemeral: true });
+    await interaction.reply({ 
+        content: 'カレンダー表示機能は実装中です。夜の通知からダイエット記録をつけてお待ちください。', 
+        ephemeral: true 
+    });
 }
 
 async function handleDietStats(interaction) {
-    await interaction.reply({ content: '統計機能は実装中です。', ephemeral: true });
+    await interaction.reply({ 
+        content: '統計機能は実装中です。夜の通知からダイエット記録をつけてお待ちください。', 
+        ephemeral: true 
+    });
 }
 
 async function handleDietGoal(interaction) {
-    await interaction.reply({ content: '目標設定機能は実装中です。', ephemeral: true });
+    await interaction.reply({ 
+        content: '目標設定機能は実装中です。夜の通知からダイエット記録をつけてお待ちください。', 
+        ephemeral: true 
+    });
 }
 
 async function handleDietProgress(interaction) {
-    await interaction.reply({ content: '進捗表示機能は実装中です。', ephemeral: true });
+    await interaction.reply({ 
+        content: '進捗表示機能は実装中です。夜の通知からダイエット記録をつけてお待ちください。', 
+        ephemeral: true 
+    });
 }
 
 async function handleDietReport(interaction) {
-    await interaction.reply({ content: 'レポート機能は実装中です。', ephemeral: true });
+    await interaction.reply({ 
+        content: 'レポート機能は実装中です。夜の通知からダイエット記録をつけてお待ちください。', 
+        ephemeral: true 
+    });
 }
 
 module.exports = {
     createCommand,
     handleCommand,
-    handleButtonInteraction,
-    handleModalSubmit,
-    showChecklistModal,
-    handleChecklistSubmit,
-    saveDietRecord,
     getDietRecordsInRange
 };
